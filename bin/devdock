@@ -1,0 +1,10 @@
+#!/bin/sh
+# Khởi động DevDock. Dùng /usr/bin/python3 vì GTK4/libadwaita nằm ở Python hệ thống (không phải pyenv/venv).
+ROOT="$(dirname "$(dirname "$(readlink -f "$0")")")"
+# Terminal của VS Code bản snap để lại biến trỏ vào /snap/code làm GTK abort -> gỡ chúng (khôi phục XDG_*_DIRS gốc).
+[ -n "$XDG_DATA_DIRS_VSCODE_SNAP_ORIG" ] && export XDG_DATA_DIRS="$XDG_DATA_DIRS_VSCODE_SNAP_ORIG"
+[ -n "$XDG_CONFIG_DIRS_VSCODE_SNAP_ORIG" ] && export XDG_CONFIG_DIRS="$XDG_CONFIG_DIRS_VSCODE_SNAP_ORIG"
+for v in $(env | grep -oE '^(SNAP[A-Z_]*|GTK_PATH|GTK_EXE_PREFIX|GTK_IM_MODULE_FILE|GTK_MODULES|GIO_MODULE_DIR|GIO_LAUNCHED_[A-Z_]+|GDK_PIXBUF_[A-Z_]+|LOCPATH|GSETTINGS_SCHEMA_DIR|XDG_DATA_HOME|XDG_CONFIG_DIRS_VSCODE_SNAP_ORIG|XDG_DATA_DIRS_VSCODE_SNAP_ORIG)=' | tr -d '='); do
+  case "$v" in XDG_DATA_HOME) case "$XDG_DATA_HOME" in */snap/*) unset XDG_DATA_HOME;; esac;; *) unset "$v";; esac
+done
+PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" exec /usr/bin/python3 -B -m devdock "$@"

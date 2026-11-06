@@ -1,6 +1,5 @@
-node_modules
-dist
-target
+__pycache__/
+*.pyc
+.venv/
 *.log
-src-tauri/gen
 .DS_Store

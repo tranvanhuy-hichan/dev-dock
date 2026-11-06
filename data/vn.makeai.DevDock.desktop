@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=DevDock
+GenericName=Developer Hub
+Comment=Quản lý project, dev services, file .env, log, giám sát hệ thống, Docker và dọn đĩa
+Exec=devdock
+Icon=vn.makeai.DevDock
+Terminal=false
+Categories=Development;
+Keywords=developer;project;git;docker;env;log;service;monitor;disk;cleaner;
+StartupWMClass=vn.makeai.DevDock

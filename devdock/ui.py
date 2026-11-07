@@ -44,6 +44,32 @@ textview.mono { font-family: monospace; font-size: 11pt; }
 .ai-bubble { background: alpha(currentColor, .07); border-radius: 16px; padding: 8px 14px; }
 .codeblock { background: alpha(black, .28); border-radius: 8px; padding: 6px 10px; }
 .thinking { font-style: italic; opacity: .75; }
+.dash-hero { background: alpha(currentColor, .06); border-radius: 18px; padding: 18px 24px; }
+.hero-title { font-size: 24pt; font-weight: 800; }
+.hero-clock { font-size: 32pt; font-weight: 300; font-feature-settings: "tnum"; }
+.chip { border-radius: 99px; padding: 3px 12px; background: alpha(currentColor, .10); font-weight: 600; font-size: 10pt; min-height: 0; min-width: 0; }
+.chip:hover { background: alpha(currentColor, .20); }
+.attn-bad { box-shadow: inset 4px 0 @error_color; }
+.attn-warn { box-shadow: inset 4px 0 @warning_color; }
+.attn-info { box-shadow: inset 4px 0 @accent_color; }
+.gauge-card { border-radius: 16px; padding: 14px 16px; }
+.section-title { font-weight: 700; font-size: 12pt; }
+.nav-ico { border-radius: 8px; padding: 5px; min-width: 18px; min-height: 18px; }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+.gauge-card, .metric { background: alpha(currentColor, .045); border-radius: 14px; }
 .page-title { font-weight: 700; font-size: 15pt; }
 .sidebar-pane { background: alpha(@sidebar_bg_color, .5); }
 actionbar > revealer > box { padding: 6px 12px; }

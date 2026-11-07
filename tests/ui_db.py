@@ -190,7 +190,7 @@ def db_postgres_tests(win):
         check('postgres container (skipped)', True, r.stderr)
         return
     try:
-        check('postgres ready', wait_for(lambda: sh('docker', 'exec', PG, 'pg_isready', '-U', 'uiuser', '-d', 'uidb').returncode == 0, 40, 500))
+        check('postgres ready', wait_for(lambda: sh('docker', 'exec', PG, 'psql', '-U', 'uiuser', '-d', 'uidb', '-tAc', 'select 1').returncode == 0, 40, 500))
         c = D.make_conn('postgres', 'docker', 'x', container=PG, user='uiuser', password='ui-pg-pw', db='uidb')
         for q in ["CREATE SCHEMA shop", "CREATE TABLE shop.items(id serial PRIMARY KEY, name text NOT NULL, note text)", "CREATE INDEX items_name ON shop.items(name)",
                   "INSERT INTO shop.items(name, note) SELECT 'Mặt hàng ' || g, CASE WHEN g % 2 = 0 THEN NULL ELSE E'dòng 1\\ndòng 2, \"x\"' END FROM generate_series(1, 250) g"]:

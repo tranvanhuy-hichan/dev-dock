@@ -142,7 +142,7 @@ def set_autostart(enabled):
         except FileNotFoundError:
             pass
         return
-    atomic_write(p, '[Desktop Entry]\nType=Application\nName=DevDock (giám sát nền)\nComment=Giám sát tài nguyên và dev service\n'
+    atomic_write(p, '[Desktop Entry]\nType=Application\nName=DevDock\nComment=Trung tâm cho developer: project, dev service, Docker, giám sát\n'
                     f'Exec={devdock_exec()} --hidden\nIcon=vn.makeai.DevDock\nTerminal=false\nX-GNOME-Autostart-enabled=true\n', 0o644)
 
 

@@ -19,6 +19,7 @@ ICON_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 # (id, tên, icon, lớp trang)
 MODULES = [
     # (id, tên, icon, lớp trang, nhóm trong sidebar)
+    ('dashboard', 'Tổng quan', 'go-home-symbolic', 'devdock.pages.dashboard:DashboardPage', 'Trang chủ'),
     ('projects', 'Projects', 'folder-symbolic', 'devdock.pages.projects:ProjectsPage', 'Project'),
     ('git', 'Git', 'media-playlist-repeat-symbolic', 'devdock.pages.gitpage:GitPage', 'Project'),
     ('services', 'Dev Services', 'media-playback-start-symbolic', 'devdock.pages.services:ServicesPage', 'Project'),
@@ -33,6 +34,14 @@ MODULES = [
     ('cleaner', 'DiskCleaner', 'edit-clear-all-symbolic', 'devdock.pages.cleaner:CleanerPage', 'Hệ thống'),
     ('ollama', 'Ollama AI', 'chat-bubble-text-symbolic', 'devdock.pages.ollama:OllamaPage', 'AI'),
 ]
+
+
+# màu dịu cho từng module (tên lớp CSS c-<màu>)
+MODULE_COLOR = {
+    'dashboard': 'blue', 'projects': 'amber', 'git': 'orange', 'services': 'green', 'env': 'rose', 'deps': 'teal',
+    'docker': 'sky', 'database': 'indigo', 'api': 'purple', 'logs': 'slate', 'sysmon': 'cyan', 'watch': 'red',
+    'cleaner': 'lime', 'ollama': 'pink',
+}
 
 
 class Palette(Adw.Dialog):
@@ -107,7 +116,9 @@ class MainWindow(Adw.ApplicationWindow):
             row = Gtk.ListBoxRow()
             row.mid, row.group = mid, group
             line = Gtk.Box(spacing=12, margin_top=7, margin_bottom=7, margin_start=6, margin_end=6)
-            line.append(Gtk.Image(icon_name=icon))
+            chip = Gtk.Box(css_classes=['nav-ico', 'c-' + MODULE_COLOR.get(mid, 'blue')], valign=Gtk.Align.CENTER)
+            chip.append(Gtk.Image(icon_name=icon))
+            line.append(chip)
             line.append(label(name, hexpand=True))
             if idx <= 9:
                 line.append(label(f'Ctrl+{idx}', ['dim-label', 'caption']))
@@ -168,7 +179,7 @@ class MainWindow(Adw.ApplicationWindow):
         # Giám sát tài nguyên chạy ở cấp ứng dụng (không cần mở trang Giám sát). Phải có trước khi dựng trang đầu tiên.
         from .lib.watchdog import WatchService
         self.watch = WatchService(self)
-        self.select_module(store['module'] if store['module'] in [m[0] for m in MODULES] else 'projects')
+        self.select_module('dashboard')  # luôn mở bằng trang tổng quan
         self.watch.start()
         if self.watch.config['background'] and hasattr(app, 'set_hold'):
             app.set_hold(True)  # chế độ chạy nền: giữ ứng dụng sống khi cửa sổ bị ẩn

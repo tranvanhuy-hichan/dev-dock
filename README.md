@@ -4,6 +4,7 @@ Trung tâm cho developer, viết bằng **Python + GTK4 + libadwaita** (giao di�
 
 | Nhóm | Module | Làm gì |
 |---|---|---|
+| Trang chủ | **Tổng quan** | Dashboard mở đầu tiên: lời chào + đồng hồ, gauge CPU/RAM/ổ đĩa/GPU, mục "Cần chú ý" (RAM/ổ đĩa đầy, service lỗi, repo chưa push, container lỗi, cảnh báo giám sát), project gần đây, dev service bật/tắt nhanh, Docker/Ollama, công tắc tự khởi động. |
 | Project | **Projects** | Quét `~/Projects`: mọi repo cùng nhánh, thay đổi chưa commit, commit chưa push/cần pull, dung lượng build; mở VS Code/terminal, `git fetch`, dọn `node_modules`/`target`/`.venv`. |
 | | **Git** | Stage/unstage, diff tô màu, commit (và commit + push), pull `--ff-only`, push (không force), lịch sử có tìm kiếm, nhánh (checkout/tạo/xoá nhánh đã merge), stash, "Push tất cả" các repo chưa push. |
 | | **Dev Services** | Khai báo server dev, bật/tắt, log trực tiếp, xung đột cổng. **Tìm trong project** tự phát hiện dev server (npm, compose, Makefile, FastAPI, Spring…). |
@@ -18,7 +19,7 @@ Trung tâm cho developer, viết bằng **Python + GTK4 + libadwaita** (giao di�
 | | **DiskCleaner** | Dọn thư mục build, cache, Docker, tệp lớn/trùng; treemap, xuất CSV. |
 | AI | **Ollama AI** | Quản lý model (tải/xoá/chi tiết/dỡ khỏi RAM) và chat trực tiếp với model cục bộ. |
 
-Phím tắt: `Ctrl+1..9` đổi module (module còn lại qua `Ctrl+K`) · `Ctrl+K` lệnh nhanh · `Ctrl+Q` thoát. Giao diện sáng/tối/theo hệ thống ở menu.
+Phím tắt: `Ctrl+1` = Tổng quan (luôn mở đầu tiên), `Ctrl+1..9` đổi module (module còn lại qua `Ctrl+K`) · `Ctrl+K` lệnh nhanh · `Ctrl+Q` thoát. Giao diện sáng/tối/theo hệ thống ở menu.
 
 ## Cài đặt
 ```bash
@@ -28,6 +29,9 @@ sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-psutil   # nếu
 ```
 Sau đó mở **DevDock** từ menu ứng dụng hoặc chạy `devdock`. Chạy thẳng từ mã nguồn: `./bin/devdock`.
 (Bộ khởi chạy tự gỡ biến môi trường của VS Code bản snap — nếu không, GTK sẽ lỗi khi mở từ terminal của nó.)
+
+## Tự khởi động
+Bật ở trang **Tổng quan** (công tắc cuối trang) hoặc trang Giám sát; tạo `~/.config/autostart/vn.makeai.DevDock.desktop` chạy `devdock --hidden`. Chạy khi đăng nhập desktop; cửa sổ chỉ ẩn nếu đã bật chế độ chạy nền ở Giám sát.
 
 ## An toàn
 - **Projects**: git chạy với `core.fsmonitor=false` và hook tắt, nên repo lạ không chạy được lệnh qua `.git/config`.
@@ -44,6 +48,7 @@ Sau đó mở **DevDock** từ menu ứng dụng hoặc chạy `devdock`. Chạy
 devdock/lib/      logic thuần Python, test độc lập (projects, services, envfiles, logsrc, dockercli, sysmon)
 devdock/pages/    giao diện từng module (GTK4/libadwaita)
 devdock/cleaner/  lõi quét của Disk Cleaner (scanner, treemap, ring)
+scripts/          ui-test.sh (chạy test giao diện thật), shot.sh (chụp ảnh các trang)
 tests/            test_*.py (unit)   ui_smoke.py + ui_*.py (điều khiển giao diện thật, cần màn hình)
 ```
 ```bash

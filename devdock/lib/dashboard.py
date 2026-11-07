@@ -19,10 +19,11 @@ def _names(items, n=3):
     return ', '.join(items[:n]) + (f' và {len(items) - n} mục khác' if len(items) > n else '')
 
 
-def attention(sys=None, projects=None, services=None, docker=None, alerts=None, now=None):
+def attention(sys=None, projects=None, services=None, docker=None, alerts=None, now=None, secrets=None, conflicts=None):
     """Trả về danh sách {'level','title','detail','module'} đã sắp theo mức độ (bad > warn > info).
 
     sys: snapshot của sysmon.Monitor. projects: danh sách từ projects.scan. services: [{'name','state','rc'}].
+    secrets: tóm tắt secrets.totals ({'bad','warn','repos_with'}). conflicts: ports.conflicts (trùng cổng của dev service).
     docker: {'available': bool, 'containers': [{'name','state','status'}]} hoặc None (chưa biết). alerts: lịch sử watchdog.
     """
     out = []
@@ -77,6 +78,13 @@ def attention(sys=None, projects=None, services=None, docker=None, alerts=None, 
                         bad.append(c['name'])
             if bad:
                 add('warn', f'{len(bad)} container có vấn đề', _names(bad), 'docker')
+    if secrets and secrets.get('bad'):
+        add('bad', f"{secrets['bad']} bí mật nghiêm trọng trong {secrets['repos_with']} repo", 'Khoá/.env đã commit — thu hồi và tạo khoá mới.', 'secrets')
+    elif secrets and secrets.get('warn'):
+        add('info', f"{secrets['warn']} mục nghi chứa bí mật cần xem lại", '', 'secrets')
+    busy = [c for c in (conflicts or []) if c['level'] == 'busy']
+    if busy:
+        add('warn', f"{len(busy)} dev service bị trùng cổng", '; '.join(c['detail'] for c in busy[:2]), 'ports')
     recent = [a for a in (alerts or []) if now - float(a.get('t', 0)) < 86400]
     if recent:
         add('warn', f'{len(recent)} cảnh báo trong 24 giờ qua', recent[0].get('title', ''), 'watch')

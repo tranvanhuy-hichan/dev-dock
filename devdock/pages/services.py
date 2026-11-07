@@ -18,6 +18,45 @@ from .sysmon import confirm  # noqa: E402
 STATE = {'running': ('Đang chạy', 'ok'), 'stopped': ('Đã dừng', 'info'), 'failed': ('Lỗi', 'bad')}
 
 
+def start_checked(window, svc, go):
+    """Kiểm tra trùng cổng trước khi chạy `svc`. Ổn → gọi go(); trùng → hỏi: huỷ / dừng process đang giữ cổng rồi chạy / vẫn chạy."""
+    from ..lib import ports as PT
+    svcs = list(window.store['services'])
+    running = {s['id'] for s in svcs if window.services.is_running(s['id'])}
+
+    def work():
+        rows = PT.snapshot()
+        return PT.check_start(svc, svcs, rows, running), rows
+
+    def done(res, err):
+        if err or not res or not res[0]:
+            go()
+            return
+        msgs, rows = res
+        port = int(svc.get('port') or 0)
+        occ = next((r for r in rows if r['protocol'] == 'TCP' and r['port'] == port), None)
+        can = bool(occ and not occ.get('container') and PT.can_stop(occ)[0])
+        d = Adw.AlertDialog(heading=f'Cổng {port} đang bận', body='\n'.join(msgs) + '\n\nChạy tiếp có thể báo lỗi "port already in use".')
+        d.add_response('no', 'Huỷ')
+        if can:
+            d.add_response('free', 'Dừng process đó rồi chạy')
+            d.set_response_appearance('free', Adw.ResponseAppearance.DESTRUCTIVE)
+        d.add_response('go', 'Vẫn chạy')
+        d.set_default_response('no')
+        d.set_close_response('no')
+
+        def resp(_d, r):
+            if r == 'go':
+                go()
+            elif r == 'free':
+                def stop_then():
+                    PT.stop_pid(occ['pid'])
+                bg(stop_then, lambda _r, e: window.toast(e) if e else go())
+        d.connect('response', resp)
+        d.present(window)
+    bg(work, done)
+
+
 class ServiceDialog(Adw.Dialog):
     """Thêm/sửa một service."""
 
@@ -358,10 +397,16 @@ class ServicesPage(Page):
 
     # ---- hành động
     def start(self):
-        self.guard(lambda: self.mgr.start(self.get(self.sel_id)))
-        self.log_seq = 0
-        self.logbuf.set_text('', -1)
-        self.tick()
+        s = self.get(self.sel_id)
+        if not s:
+            return
+
+        def go():
+            self.guard(lambda: self.mgr.start(s))
+            self.log_seq = 0
+            self.logbuf.set_text('', -1)
+            self.tick()
+        start_checked(self.window, s, go)
 
     def stop(self):
         self.mgr.stop(self.sel_id)

@@ -6,11 +6,13 @@ Trung tâm cho developer, viết bằng **Python + GTK4 + libadwaita** (giao di�
 |---|---|---|
 | Trang chủ | **Tổng quan** | Dashboard mở đầu tiên: lời chào + đồng hồ, gauge CPU/RAM/ổ đĩa/GPU, mục "Cần chú ý" (RAM/ổ đĩa đầy, service lỗi, repo chưa push, container lỗi, cảnh báo giám sát), project gần đây, dev service bật/tắt nhanh, Docker/Ollama, công tắc tự khởi động. |
 | Project | **Projects** | Quét `~/Projects`: mọi repo cùng nhánh, thay đổi chưa commit, commit chưa push/cần pull, dung lượng build; mở VS Code/terminal, `git fetch`, dọn `node_modules`/`target`/`.venv`. |
+| | **Secrets** | Quét mọi repo tìm khoá API/token (AWS, GitHub, Stripe, OpenAI/Anthropic, private key, mật khẩu trong URL, chuỗi gán cứng entropy cao) và file `.env` đã commit / chưa nằm trong `.gitignore` / từng bị commit trong lịch sử. Giá trị luôn được che; thêm vào `.gitignore` bằng một nút; "Bỏ qua" hoặc `devdock:ignore` cuối dòng cho mục giả. Kết quả hiện ở "Cần chú ý" của Tổng quan. |
 | | **Git** | Stage/unstage, diff tô màu, commit (và commit + push), pull `--ff-only`, push (không force), lịch sử có tìm kiếm, nhánh (checkout/tạo/xoá nhánh đã merge), stash, "Push tất cả" các repo chưa push. |
 | | **Dev Services** | Khai báo server dev, bật/tắt, log trực tiếp, xung đột cổng. **Tìm trong project** tự phát hiện dev server (npm, compose, Makefile, FastAPI, Spring…). |
 | | **Env Manager** | Mọi file `.env*`: xem/sửa (che bí mật), so sánh, cảnh báo thiếu biến so với `.env.example`. |
 | | **Dependency** | Thư viện từng project (npm/pnpm/yarn/pip): đã cài chưa, lạc hậu major/minor/patch, lỗ hổng bảo mật; không tự cài/cập nhật, chỉ mở terminal chạy lệnh. |
 | Chạy & dữ liệu | **DockerDesk** | Tổng quan + dọn dẹp, container (chi tiết/logs/thống kê/biến môi trường), image (chạy container), volume, network, Compose. |
+| | **Port Manager** | Mọi cổng đang nghe kèm chủ sở hữu (process, dev service, container Docker, project), lọc theo dev/Docker/mở ra mạng; "Giải phóng cổng" gửi SIGTERM có xác nhận (SIGKILL chỉ khi bạn đồng ý, không dừng process của user khác/hệ thống/chính DevDock); cảnh báo trùng cổng ngay trước khi chạy dev service. |
 | | **Database** | PostgreSQL, MySQL/MariaDB, Redis (trong Docker) và SQLite: duyệt bảng, cấu trúc, SQL, xuất CSV; **mặc định chỉ đọc**. |
 | | **API Tester** | Gọi HTTP, lưu request theo project, biến `{{base_url}}`, import OpenAPI, copy curl. |
 | | **Log Viewer** | Log Docker/service/journal/file; lọc chữ/regex/mức lỗi, tô màu, tạm dừng, lưu. |

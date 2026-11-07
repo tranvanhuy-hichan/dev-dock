@@ -23,9 +23,11 @@ MODULES = [
     ('projects', 'Projects', 'folder-symbolic', 'devdock.pages.projects:ProjectsPage', 'Project'),
     ('git', 'Git', 'media-playlist-repeat-symbolic', 'devdock.pages.gitpage:GitPage', 'Project'),
     ('services', 'Dev Services', 'media-playback-start-symbolic', 'devdock.pages.services:ServicesPage', 'Project'),
+    ('secrets', 'Secrets', 'channel-secure-symbolic', 'devdock.pages.secrets:SecretsPage', 'Project'),
     ('env', 'Env Manager', 'dialog-password-symbolic', 'devdock.pages.envs:EnvPage', 'Project'),
     ('deps', 'Dependency', 'software-update-available-symbolic', 'devdock.pages.deps:DepsPage', 'Project'),
     ('docker', 'DockerDesk', 'package-x-generic-symbolic', 'devdock.pages.docker:DockerPage', 'Chạy & dữ liệu'),
+    ('ports', 'Port Manager', 'network-transmit-receive-symbolic', 'devdock.pages.ports:PortsPage', 'Chạy & dữ liệu'),
     ('database', 'Database', 'drive-multidisk-symbolic', 'devdock.pages.database:DatabasePage', 'Chạy & dữ liệu'),
     ('api', 'API Tester', 'send-to-symbolic', 'devdock.pages.apitester:ApiPage', 'Chạy & dữ liệu'),
     ('logs', 'Log Viewer', 'utilities-terminal-symbolic', 'devdock.pages.logs:LogsPage', 'Chạy & dữ liệu'),
@@ -40,7 +42,7 @@ MODULES = [
 MODULE_COLOR = {
     'dashboard': 'blue', 'projects': 'amber', 'git': 'orange', 'services': 'green', 'env': 'rose', 'deps': 'teal',
     'docker': 'sky', 'database': 'indigo', 'api': 'purple', 'logs': 'slate', 'sysmon': 'cyan', 'watch': 'red',
-    'cleaner': 'lime', 'ollama': 'pink',
+    'cleaner': 'lime', 'ollama': 'pink', 'secrets': 'red', 'ports': 'teal',
 }
 
 

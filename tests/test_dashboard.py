@@ -50,6 +50,17 @@ class AttentionTest(unittest.TestCase):
         many = [{'name': f'p{i}', 'git': True, 'ahead': 1} for i in range(6)]
         self.assertIn('và 3 mục khác', D.attention(projects=many)[0]['detail'])
 
+    def test_secrets_and_port_conflicts(self):
+        a = D.attention(secrets={'bad': 2, 'warn': 3, 'repos_with': 1})
+        self.assertEqual((a[0]['level'], a[0]['module']), ('bad', 'secrets'))
+        self.assertIn('2 bí mật', a[0]['title'])
+        self.assertEqual(D.attention(secrets={'bad': 0, 'warn': 3, 'repos_with': 1})[0]['level'], 'info')
+        self.assertEqual(D.attention(secrets={'bad': 0, 'warn': 0, 'repos_with': 0}), [])
+        c = [{'level': 'busy', 'port': 3000, 'detail': 'Cổng 3000 đang bị node chiếm'}, {'level': 'dup', 'port': 1, 'detail': 'x'}]
+        a = D.attention(conflicts=c)
+        self.assertEqual((a[0]['level'], a[0]['module'], a[0]['title']), ('warn', 'ports', '1 dev service bị trùng cổng'))
+        self.assertEqual(D.attention(conflicts=[c[1]]), [])
+
     def test_docker(self):
         self.assertIn('Docker chưa chạy', D.attention(docker={'available': False, 'containers': []})[0]['title'])
         a = D.attention(docker={'available': True, 'containers': [

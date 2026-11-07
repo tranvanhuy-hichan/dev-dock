@@ -13,11 +13,14 @@ from gi.repository import Adw, GLib, Gtk, Pango, PangoCairo  # noqa: E402
 from ..lib import dashboard as DB  # noqa: E402
 from ..lib import dockercli as DK  # noqa: E402
 from ..lib import ollama as O  # noqa: E402
+from ..lib import ports as PT  # noqa: E402
 from ..lib import projects as P  # noqa: E402
+from ..lib import secrets as S  # noqa: E402
 from ..lib import watchdog as W  # noqa: E402
 from ..lib.sysmon import Monitor  # noqa: E402
 from ..ui import InfoStrip, Page, Sparkline, bar, bg, button, clear, content_box, duration, esc, hbox, human, icon_btn, label, rate, vbox  # noqa: E402
 from .projects import status_markup  # noqa: E402
+from .services import start_checked  # noqa: E402
 
 
 LEVEL_ICON = {'bad': 'dialog-error-symbolic', 'warn': 'dialog-warning-symbolic', 'info': 'dialog-information-symbolic'}
@@ -110,6 +113,7 @@ class DashboardPage(Page):
         self.mon = Monitor()
         self.hist = {'cpu': deque(maxlen=60), 'mem': deque(maxlen=60)}
         self.snap = self.projects = self.docker = self.ollama = None
+        self.secrets, self.conflicts = None, []
         self.alerts, self.last_scan, self.busy, self.svc_sig = [], 0.0, set(), None
         self.hdr_end = [icon_btn('view-refresh-symbolic', 'Làm mới tất cả', self.refresh_all)]
 
@@ -180,7 +184,7 @@ class DashboardPage(Page):
         sc.set_child(root)
         self.set_child(sc)
         self.update_auto_note()
-        self.every(2, self.tick_fast).every(5, self.tick_projects).every(10, self.tick_docker).every(15, self.tick_ollama)
+        self.every(2, self.tick_fast).every(5, self.tick_projects).every(10, self.tick_ports).every(10, self.tick_docker).every(15, self.tick_ollama)
 
     # ---------------- dựng khối ----------------
     def _section(self, title, module, lst, extra=None):
@@ -218,7 +222,7 @@ class DashboardPage(Page):
 
     def refresh_all(self):
         self.last_scan = 0
-        for f in (self.tick_fast, self.tick_projects, self.tick_docker, self.tick_ollama):
+        for f in (self.tick_fast, self.tick_projects, self.tick_ports, self.tick_docker, self.tick_ollama):
             f()
 
     def tick_fast(self):
@@ -235,6 +239,19 @@ class DashboardPage(Page):
         self.once('sys', self.mon.snapshot, done)
         self.render_services()
         self.render_attention()
+
+    def tick_ports(self):
+        svcs = list(self.window.store['services'])
+        running = {s['id'] for s in svcs if self.window.services.is_running(s['id'])}
+
+        def work():
+            return PT.conflicts(svcs, PT.snapshot(), running), S.totals(list(S.load_cache().values()))
+
+        def done(res, _e):
+            if res:
+                self.conflicts, self.secrets = res
+                self.render_attention()
+        self.once('ports', work, done)
 
     def tick_projects(self):
         if time.time() - self.last_scan < 45:
@@ -366,11 +383,16 @@ class DashboardPage(Page):
         svc = next((s for s in self.window.store['services'] if s['id'] == row['id']), None)
         if not svc:
             return
-        try:
-            self.window.services.stop(svc['id']) if running else self.window.services.start(svc)
-        except RuntimeError as e:
-            self.toast(str(e))
-        GLib.timeout_add(500, lambda: (self.render_services(), self.render_attention(), False)[2])
+        def go():
+            try:
+                self.window.services.stop(svc['id']) if running else self.window.services.start(svc)
+            except RuntimeError as e:
+                self.toast(str(e))
+            GLib.timeout_add(500, lambda: (self.render_services(), self.render_attention(), False)[2])
+        if running:
+            go()
+        else:
+            start_checked(self.window, svc, go)
 
     def render_projects(self):
         self.proj_list.remove_all()
@@ -422,7 +444,7 @@ class DashboardPage(Page):
         if self.snap is None and self.projects is None and self.docker is None:
             return
         svc_state = [{'name': s['name'], **{k: v for k, v in (self.window.services.status(s['id']) or {}).items() if k in ('state', 'rc')}} for s in self.window.store['services']]
-        items = DB.attention(self.snap, self.projects, svc_state, self.docker, self.alerts)
+        items = DB.attention(self.snap, self.projects, svc_state, self.docker, self.alerts, secrets=self.secrets, conflicts=self.conflicts)
         sig = [(i['level'], i['title'], i['detail']) for i in items]
         if sig == getattr(self, '_attn_sig', None):
             return

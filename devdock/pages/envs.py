@@ -9,7 +9,7 @@ from gi.repository import Adw, Gtk  # noqa: E402
 
 from ..lib import envfiles as E  # noqa: E402
 from ..lib import projects as P  # noqa: E402
-from ..ui import DataTable, Page, bg, button, copy_text, hbox, label, vbox  # noqa: E402
+from ..ui import (DataTable, InfoStrip, Page, SelectionBar, bg, button, content_box, copy_text, hbox, icon_btn, label, linked, vbox)  # noqa: E402
 from .sysmon import confirm  # noqa: E402
 
 OK, WARN, BAD, DIM = '#26a269', '#e5a50a', '#e01b24', '#9a9996'
@@ -56,13 +56,19 @@ class EnvPage(Page):
     def __init__(self, window):
         super().__init__(window)
         self.files, self.cur, self.data, self.busy, self.reveal = [], None, {}, False, False
+        # --- thanh tiêu đề: chuyển Biến/So sánh ở giữa; hiện bí mật + làm mới bên phải
+        self.tg = Adw.ToggleGroup()
+        self.tg.add(Adw.Toggle(name='vars', label='Biến'))
+        self.tg.add(Adw.Toggle(name='cmp', label='So sánh'))
+        self.tg.set_active_name('vars')
+        self.tg.connect('notify::active-name', lambda g, _p: self.on_tab(g.get_active_name()))
+        self.hdr_title = self.tg
+        self.reveal_btn = icon_btn('view-reveal-symbolic', 'Hiện giá trị bí mật', toggle=True)
+        self.reveal_btn.connect('toggled', lambda b: (setattr(self, 'reveal', b.get_active()), self.render(), self.render_cmp()))
+        self.hdr_end = [icon_btn('view-refresh-symbolic', 'Quét lại file .env', self.refresh), self.reveal_btn]
         box = hbox(0)
         # ---- trái: danh sách file
-        left = vbox(0, width_request=290)
-        head = hbox(6, margin_top=10, margin_bottom=6, margin_start=10, margin_end=10)
-        head.append(label('File .env', ['heading'], hexpand=True))
-        head.append(button(icon='view-refresh-symbolic', css=['flat'], on=self.refresh, tip='Quét lại'))
-        left.append(head)
+        left = vbox(0, width_request=280)
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, css_classes=['navigation-sidebar'])
         self.list.set_header_func(self._header)
         self.list.connect('row-selected', lambda _l, r: r and self.load_file(r.path))
@@ -95,50 +101,53 @@ class EnvPage(Page):
         return d
 
     def _main(self):
-        box = vbox(10, margin_top=14, margin_bottom=14, margin_start=18, margin_end=18)
-        top = hbox(10)
-        self.title = label('', ['title-3'], hexpand=True, ellipsize=3)
-        top.append(self.title)
-        self.tg = Adw.ToggleGroup()
-        self.tg.add(Adw.Toggle(name='vars', label='Biến'))
-        self.tg.add(Adw.Toggle(name='cmp', label='So sánh'))
-        self.tg.set_active_name('vars')
-        self.tg.connect('notify::active-name', lambda g, _p: self.view.set_visible_child_name(g.get_active_name()))
-        top.append(self.tg)
-        box.append(top)
-        self.warn = Adw.Banner(revealed=False)
-        box.append(self.warn)
+        root = content_box(10)
+        root.set_margin_bottom(12)
+        # hàng tiêu đề: tên file + thư mục ở trái, nút thêm biến ở phải
+        head = hbox(12)
+        names = vbox(0, hexpand=True, valign=Gtk.Align.CENTER)
+        self.title = label('', ['page-title'], ellipsize=3)
+        self.subtitle = label('', ['dim-label', 'caption'], ellipsize=1)
+        names.append(self.title)
+        names.append(self.subtitle)
+        head.append(names)
+        self.add_btn = button('Thêm biến', icon='list-add-symbolic', css=['suggested-action'], on=self.add_var)
+        head.append(self.add_btn)
+        root.append(head)
+        self.warn = InfoStrip('warning')
+        root.append(self.warn)
         self.view = Gtk.Stack(vexpand=True)
         self.view.add_named(self._vars(), 'vars')
         self.view.add_named(self._cmp(), 'cmp')
-        box.append(self.view)
-        return box
+        root.append(self.view)
+        outer = vbox(0)
+        outer.append(root)
+        self.bar = SelectionBar()
+        self.v_btns = {}
+        self.v_btns['edit'] = button('Sửa', icon='document-edit-symbolic', on=self.edit_var)
+        self.v_btns['copy'] = button('Copy giá trị', icon='edit-copy-symbolic', on=self.copy_val)
+        self.v_btns['del'] = button('Xoá', icon='user-trash-symbolic', css=['destructive-action'], on=self.del_var)
+        self.bar.add(linked(self.v_btns['edit'], self.v_btns['copy']), self.v_btns['del'])
+        outer.append(self.bar)
+        return outer
+
+    def on_tab(self, name):
+        self.view.set_visible_child_name(name)
+        self.add_btn.set_visible(name == 'vars')
+        if name != 'vars':
+            self.bar.select(None)
+        else:
+            self.on_var_select(self.table.selected())
 
     # ---- tab Biến
     def _vars(self):
-        box = vbox(8)
-        bar = hbox(6)
-        self.sw = Gtk.Switch(valign=Gtk.Align.CENTER)
-        self.sw.connect('notify::active', lambda s, _p: (setattr(self, 'reveal', s.get_active()), self.render()))
-        bar.append(self.sw)
-        bar.append(label('Hiện giá trị bí mật', hexpand=True))
-        self.v_btns = {}
-        for k, t, ic, fn, css in (('add', 'Thêm biến', 'list-add-symbolic', self.add_var, ['suggested-action']), ('edit', 'Sửa', 'document-edit-symbolic', self.edit_var, None),
-                                  ('copy', 'Copy giá trị', 'edit-copy-symbolic', self.copy_val, None), ('del', 'Xoá', 'user-trash-symbolic', self.del_var, None)):
-            b = button(t, icon=ic, css=css, on=fn)
-            b.set_sensitive(k == 'add')
-            self.v_btns[k] = b
-            bar.append(b)
-        box.append(bar)
         cols = [
             {'title': 'Biến', 'get': lambda d: d['key'], 'sort': lambda d: d['key'].lower(), 'width': 280, 'css': ['mono']},
-            {'title': 'Giá trị', 'get': self.show_val, 'sort': lambda d: d['value'], 'expand': True, 'css': ['mono'], 'tip': lambda d: None},
+            {'title': 'Giá trị', 'get': self.show_val, 'sort': lambda d: d['value'], 'expand': True, 'css': ['mono']},
             {'title': 'Ghi chú', 'get': lambda d: ' · '.join(x for x in (('bí mật' if d['secret'] else ''), ('trống' if d['value'] == '' else ''), ('khai báo lặp' if d['dup'] else '')) if x), 'width': 180},
         ]
         self.table = DataTable(cols, key=lambda d: d['key'], search_text=lambda d: d['key'].lower(), on_select=self.on_var_select)
-        box.append(self.table)
-        box.append(label('Giá trị bí mật được che theo mặc định. Chỉnh sửa ghi trực tiếp vào file, giữ nguyên comment và thứ tự.', ['dim-label', 'caption']))
-        return box
+        return self.table
 
     def show_val(self, d):
         if d['secret'] and not self.reveal:
@@ -146,22 +155,23 @@ class EnvPage(Page):
         return d['value'].replace('\n', '⏎')
 
     def on_var_select(self, d):
-        for k in ('edit', 'copy', 'del'):
-            self.v_btns[k].set_sensitive(d is not None)
+        if self.view.get_visible_child_name() != 'vars':
+            return
+        self.bar.select(d['key'] if d else None, ('giá trị bí mật' if d['secret'] else d['value'][:80]) if d else '')
 
     # ---- tab So sánh
     def _cmp(self):
-        box = vbox(8)
-        bar = hbox(8)
-        bar.append(label('So với:'))
+        box = vbox(10)
         self.other = Gtk.DropDown.new_from_strings([])
         self.other.set_hexpand(True)
         self.other.connect('notify::selected', lambda *_: self.render_cmp())
-        bar.append(self.other)
         self.fill_btn = button('Thêm biến thiếu vào file này', icon='list-add-symbolic', css=['suggested-action'], on=self.fill_missing)
+        bar = hbox(8)
+        bar.append(label('So với'))
+        bar.append(self.other)
         bar.append(self.fill_btn)
         box.append(bar)
-        self.cmp_info = label('', ['dim-label'], wrap=True)
+        self.cmp_info = label('', ['dim-label'], xalign=0, wrap=True)
         box.append(self.cmp_info)
         cols = [
             {'title': 'Biến', 'get': lambda d: d['key'], 'sort': lambda d: d['key'].lower(), 'width': 260, 'css': ['mono']},
@@ -254,18 +264,36 @@ class EnvPage(Page):
         self.data = {}
         for e in ents:
             self.data[e['key']] = {'key': e['key'], 'value': e['value'], 'secret': E.is_secret(e['key'], e['value']), 'dup': counts[e['key']] > 1}
-        self.title.set_text(f"{self.rel_dir(os.path.dirname(path))}/{os.path.basename(path)}")
+        self.title.set_text(os.path.basename(path))
+        self.subtitle.set_text(self.rel_dir(os.path.dirname(path)))
         ex = E.example_for(path, self.files)
         miss = [k for k in E.load(ex) if k not in self.data] if ex else []
-        self.warn.set_revealed(bool(miss))
         if miss:
-            self.warn.set_title(f"Thiếu {len(miss)} biến so với {os.path.basename(ex)}: " + ', '.join(miss[:6]) + ('…' if len(miss) > 6 else ''))
+            self.warn.show(f"Thiếu {len(miss)} biến so với {os.path.basename(ex)}", ', '.join(miss), 'Xem & thêm', lambda: self.goto_compare(ex))
+        else:
+            self.warn.hide()
         self.render()
         # danh sách file để so sánh: cùng thư mục trước
         others = sorted((f for f in self.files if f != path), key=lambda f: (os.path.dirname(f) != os.path.dirname(path), not E.is_example(f), f))
         self.others = others
         self.other.set_model(Gtk.StringList.new([f"{self.rel_dir(os.path.dirname(f))}/{os.path.basename(f)}" for f in others]) if others else Gtk.StringList.new([]))
+        self.other.set_visible(bool(others))  # tránh ô chọn trống hiện "(None)"
         self.render_cmp()
+
+    def show_tool(self, name):  # chế độ chụp ảnh kiểm thử
+        for r in self._rows():
+            if (name == 'missing' and r.path.endswith('backend/.env')) or (name == 'cmp' and r.path.endswith('backend/.env')):
+                self.list.select_row(r)
+        if name == 'cmp':
+            self.tg.set_active_name('cmp')
+        if name == 'select' and self.table.sorted.get_n_items():
+            self.table.sel.set_selected(1)
+
+    def goto_compare(self, example):
+        self.tg.set_active_name('cmp')
+        for i, f in enumerate(getattr(self, 'others', [])):
+            if f == example:
+                self.other.set_selected(i)
 
     def render(self):
         self.table.set_rows(list(self.data.values()))

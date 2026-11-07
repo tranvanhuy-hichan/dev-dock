@@ -9,7 +9,7 @@ gi.require_version('Adw', '1')
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from ..lib import projects as P  # noqa: E402
-from ..ui import DataTable, Page, bg, button, copy_text, esc, hbox, human, label, ui, vbox  # noqa: E402
+from ..ui import (DataTable, Page, SelectionBar, bg, button, content_box, copy_text, esc, hbox, human, icon_btn, label, linked, toolbar, ui, vbox)  # noqa: E402
 from .sysmon import card, confirm  # noqa: E402
 
 OK, WARN, BAD, DIM = '#26a269', '#e5a50a', '#e01b24', '#9a9996'
@@ -46,37 +46,26 @@ class ProjectsPage(Page):
         super().__init__(window)
         self.items, self.gen, self.busy = [], 0, False
         self.flt = 0
-        root = vbox(10, margin_top=14, margin_bottom=14, margin_start=18, margin_end=18)
+        # --- thanh tiêu đề: làm mới + đổi thư mục gốc
+        self.roots_btn = icon_btn('folder-open-symbolic', 'Đổi thư mục gốc để quét', self.pick_root)
+        self.hdr_end = [icon_btn('view-refresh-symbolic', 'Quét lại', self.refresh), self.roots_btn]
+
+        root = content_box()
+        root.set_margin_bottom(12)
         stats = hbox(12, homogeneous=True)
         self.s_total = card('Project', '—', '')
-        self.s_dirty = card('Có thay đổi chưa commit', '—', '')
+        self.s_dirty = card('Chưa commit', '—', '')
         self.s_ahead = card('Chưa push / cần pull', '—', '')
-        self.s_build = card('Thư mục build có thể dọn', '—', 'đang đo…')
+        self.s_build = card('Thư mục build', '—', 'đang đo…')
         for c in (self.s_total, self.s_dirty, self.s_ahead, self.s_build):
             stats.append(c[0])
         root.append(stats)
 
-        bar = hbox(8)
         self.search = Gtk.SearchEntry(placeholder_text='Tìm project, nhánh, commit…', hexpand=True)
         self.search.connect('search-changed', lambda e: self.table.set_query(e.get_text()))
         self.dd = Gtk.DropDown.new_from_strings(FILTERS)
         self.dd.connect('notify::selected', lambda d, _p: (setattr(self, 'flt', d.get_selected()), self.render()))
-        self.roots_btn = button('', icon='folder-open-symbolic', on=self.pick_root, tip='Đổi thư mục gốc để quét')
-        self.refresh_btn = button(icon='view-refresh-symbolic', css=['flat'], on=self.refresh, tip='Quét lại')
-        for w in (self.search, self.dd, self.roots_btn, self.refresh_btn):
-            bar.append(w)
-        root.append(bar)
-
-        acts = hbox(6)
-        self.btns = {}
-        for key, text, icon, fn in (('code', 'VS Code', 'text-editor-symbolic', self.act_code), ('term', 'Terminal', 'utilities-terminal-symbolic', self.act_term),
-                                    ('folder', 'Thư mục', 'folder-symbolic', self.act_folder), ('fetch', 'Git fetch', 'emblem-synchronizing-symbolic', self.act_fetch),
-                                    ('copy', 'Copy đường dẫn', 'edit-copy-symbolic', self.act_copy), ('clean', 'Dọn thư mục build', 'user-trash-symbolic', self.act_clean)):
-            b = button(text, icon=icon, css=['destructive-action'] if key == 'clean' else None, on=fn)
-            b.set_sensitive(False)
-            self.btns[key] = b
-            acts.append(b)
-        root.append(acts)
+        root.append(toolbar(self.search, self.dd))
 
         cols = [
             {'title': 'Project', 'get': lambda d: f"<b>{esc(d['name'])}</b>" + (f"  <span foreground='{DIM}'>{esc(d['lang'])}</span>" if d['lang'] else ''), 'markup': True,
@@ -93,7 +82,20 @@ class ProjectsPage(Page):
         self.stack.add_named(self.status, 'status')
         self.stack.add_named(self.table, 'table')
         root.append(self.stack)
-        self.set_child(root)
+
+        # --- thanh hành động ở đáy: chỉ hiện khi chọn một project
+        self.bar = SelectionBar()
+        self.btns = {}
+        mk = lambda key, text, icon, fn, css=None: self.btns.setdefault(key, button(text, icon=icon, css=css, on=fn))
+        self.bar.add(
+            linked(mk('code', 'VS Code', 'text-editor-symbolic', self.act_code), mk('term', 'Terminal', 'utilities-terminal-symbolic', self.act_term),
+                   mk('folder', 'Thư mục', 'folder-symbolic', self.act_folder)),
+            linked(mk('fetch', 'Fetch', 'emblem-synchronizing-symbolic', self.act_fetch), mk('copy', 'Copy path', 'edit-copy-symbolic', self.act_copy)),
+            mk('clean', 'Dọn build', 'user-trash-symbolic', self.act_clean, ['destructive-action']))
+        outer = vbox(0)
+        outer.append(root)
+        outer.append(self.bar)
+        self.set_child(outer)
         self.every(60, lambda: self.refresh(quiet=True))
 
     # ---- dữ liệu
@@ -106,6 +108,7 @@ class ProjectsPage(Page):
         self.busy = True
         roots = self.roots()
         self.roots_btn.set_tooltip_text('Đang quét: ' + ', '.join(roots) + '\nBấm để đổi thư mục gốc')
+        self.set_subtitle(', '.join(self.rel_root(r) for r in roots))
         if not self.items and not quiet:
             self.stack.set_visible_child_name('status')
 
@@ -166,9 +169,16 @@ class ProjectsPage(Page):
         self.s_build[1].set_text(human(sum(done)))
         self.s_build[2].set_text('đo xong' if len(done) == len(items) else f'đang đo… ({len(done)}/{len(items)})')
 
+    @staticmethod
+    def rel_root(r):
+        h = os.path.expanduser('~')
+        return '~' + r[len(h):] if r.startswith(h) else r
+
     def on_select(self, p):
-        for k, b in self.btns.items():
-            b.set_sensitive(p is not None and (k != 'fetch' or p['git']) and (k != 'clean' or bool(p.get('build'))))
+        self.bar.select(p['name'] if p else None, (self.rel_root(p['path']) if p else ''))
+        if p:
+            for k, b in self.btns.items():
+                b.set_sensitive((k != 'fetch' or p['git']) and (k != 'clean' or bool(p.get('build'))))
 
     def pick_root(self):
         dlg = Gtk.FileDialog(title='Chọn thư mục chứa các project')
@@ -183,6 +193,10 @@ class ProjectsPage(Page):
             self.items = []
             self.refresh()
         dlg.select_folder(self.get_root(), None, done)
+
+    def show_tool(self, name):  # chế độ chụp ảnh kiểm thử
+        if name == 'select' and self.table.sorted.get_n_items():
+            self.table.sel.set_selected(0)
 
     # ---- hành động
     def sel(self):

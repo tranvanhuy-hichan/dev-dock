@@ -10,7 +10,7 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from ..lib import dockercli  # noqa: E402
 from ..lib import logsrc as L  # noqa: E402
-from ..ui import Page, bg, button, copy_text, debounce, hbox, label, vbox  # noqa: E402
+from ..ui import Page, bg, content_box, copy_text, debounce, hbox, icon_btn, label, linked, toolbar, vbox  # noqa: E402
 
 COLORS = {'error': '#e01b24', 'warn': '#c88800', 'debug': '#8d8d8a'}
 SHOW_MAX = 5000
@@ -27,45 +27,35 @@ class LogsPage(Page):
         self.levels = set(L.LEVELS) | {None}
         self.shown = 0
         self.docker_rows = []
+        # --- thanh tiêu đề: mở file (trái); tạm dừng, tự cuộn, xoá, copy, lưu (phải)
+        self.hdr_start = [icon_btn('document-open-symbolic', 'Mở file log…', self.pick_file)]
+        self.pause = icon_btn('media-playback-pause-symbolic', 'Tạm dừng', toggle=True)
+        self.pause.connect('toggled', lambda b: setattr(self, 'paused', b.get_active()))
+        self.follow = icon_btn('go-bottom-symbolic', 'Tự cuộn xuống dòng mới nhất', toggle=True)
+        self.follow.set_active(True)
+        self.hdr_end = [self.pause, self.follow, icon_btn('edit-clear-all-symbolic', 'Xoá màn hình', self.clear),
+                        icon_btn('edit-copy-symbolic', 'Copy log đang hiển thị', self.copy), icon_btn('document-save-symbolic', 'Lưu ra file…', self.save)]
         box = hbox(0)
         # ---- trái: nguồn log
-        left = vbox(0, width_request=270)
-        left.append(label('Nguồn log', ['heading'], margin_top=10, margin_bottom=6, margin_start=12))
-        self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, css_classes=['navigation-sidebar'])
+        self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, css_classes=['navigation-sidebar'], width_request=260)
         self.list.set_header_func(self._header)
         self.list.connect('row-selected', lambda _l, r: r and self.select(r.source))
-        left.append(Gtk.ScrolledWindow(child=self.list, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER))
-        left.append(button('Mở file log…', icon='document-open-symbolic', css=['flat'], on=self.pick_file))
-        box.append(left)
+        box.append(Gtk.ScrolledWindow(child=self.list, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER))
         box.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
-        # ---- phải
-        right = vbox(8, hexpand=True, margin_top=12, margin_bottom=12, margin_start=14, margin_end=14)
-        bar = hbox(6)
+        # ---- phải: một thanh lọc duy nhất + log + dòng trạng thái
+        right = content_box(10)
+        right.set_hexpand(True)
+        right.set_margin_bottom(8)
         self.search = Gtk.SearchEntry(placeholder_text='Lọc dòng log…', hexpand=True)
         self.search.connect('search-changed', debounce(self.refilter, 200))
         self.rx = Gtk.ToggleButton(label='.*', tooltip_text='Dùng regex')
         self.rx.connect('toggled', lambda *_: self.refilter())
-        bar.append(self.search)
-        bar.append(self.rx)
         self.lvl_btns = {}
         for lv, text in (('error', 'Lỗi'), ('warn', 'Cảnh báo'), ('info', 'Info'), ('debug', 'Debug')):
             b = Gtk.ToggleButton(label=text, active=True)
             b.connect('toggled', lambda *_: self.refilter())
             self.lvl_btns[lv] = b
-            bar.append(b)
-        right.append(bar)
-        bar2 = hbox(6)
-        self.pause = Gtk.ToggleButton(label='Tạm dừng', icon_name='media-playback-pause-symbolic')
-        self.pause.connect('toggled', lambda b: setattr(self, 'paused', b.get_active()))
-        self.follow = Gtk.ToggleButton(label='Tự cuộn', active=True)
-        bar2.append(self.pause)
-        bar2.append(self.follow)
-        bar2.append(button('Xoá màn hình', css=['flat'], on=self.clear))
-        bar2.append(button('Copy', icon='edit-copy-symbolic', css=['flat'], on=self.copy))
-        bar2.append(button('Lưu ra file…', icon='document-save-symbolic', css=['flat'], on=self.save))
-        self.status = label('', ['dim-label', 'caption'], hexpand=True, xalign=1.0, ellipsize=3, max_width_chars=40)
-        bar2.append(self.status)
-        right.append(bar2)
+        right.append(toolbar(self.search, self.rx, linked(*self.lvl_btns.values())))
         self.err = label('', ['error'], wrap=True, visible=False)
         right.append(self.err)
         self.tv = Gtk.TextView(editable=False, monospace=True, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD_CHAR, left_margin=8, right_margin=8, top_margin=6, bottom_margin=6)
@@ -80,6 +70,8 @@ class LogsPage(Page):
         self.stack.add_named(Adw.StatusPage(icon_name='utilities-terminal-symbolic', title='Chọn nguồn log', description='Chọn một container, dev service, journal hoặc mở một file log ở bên trái.'), 'empty')
         self.stack.add_named(self.sw, 'log')
         right.append(self.stack)
+        self.status = label('', ['dim-label', 'caption'], xalign=0, ellipsize=3, margin_top=2)
+        right.append(self.status)
         box.append(right)
         self.set_child(box)
         self.every(0.2, self.flush).every(6, self.refresh_sources)

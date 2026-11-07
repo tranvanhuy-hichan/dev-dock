@@ -19,7 +19,7 @@ def snapshot(win, path):
 
 def run(app, win, outdir):
     os.makedirs(outdir, exist_ok=True)
-    plan = [x for x in os.environ.get('DEVDOCK_PLAN', 'projects,services,env,logs,sysmon,docker,cleaner').split(',') if x]
+    plan = [x for x in os.environ.get('DEVDOCK_PLAN', 'projects,services,env,logs,sysmon,docker,ollama,cleaner').split(',') if x]
     wait = int(os.environ.get('DEVDOCK_WAIT', '2500'))
     steps = iter(plan)
     GLib.timeout_add_seconds(max(30, len(plan) * (wait // 1000 + 3)), lambda: app.quit() or False)  # chốt chặn: luôn thoát
@@ -32,8 +32,8 @@ def run(app, win, outdir):
             return False
         mod, _, tool = item.partition(':')
         win.select_module(mod)
-        if tool:
-            win.pages[mod].show_tool(tool)
+        if tool:  # chạy hook sau khi dữ liệu của trang đã tải
+            GLib.timeout_add(int(wait * 0.6), lambda: win.pages[mod].show_tool(tool) and False)
 
         tries = [0]
 

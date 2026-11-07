@@ -8,10 +8,11 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
 
+from ..lib import discover as DC  # noqa: E402
 from ..lib import projects as P  # noqa: E402
 from ..lib import services as S  # noqa: E402
 from ..lib.sysmon import Monitor  # noqa: E402
-from ..ui import Page, bg, button, duration, hbox, label, vbox  # noqa: E402
+from ..ui import InfoStrip, Page, bg, button, content_box, duration, hbox, icon_btn, label, linked, vbox  # noqa: E402
 from .sysmon import confirm  # noqa: E402
 
 STATE = {'running': ('Đang chạy', 'ok'), 'stopped': ('Đã dừng', 'info'), 'failed': ('Lỗi', 'bad')}
@@ -92,19 +93,98 @@ class ServiceDialog(Adw.Dialog):
         self.close()
 
 
+class DiscoverDialog(Adw.Dialog):
+    """Quét các project và cho chọn dev server muốn thêm."""
+
+    def __init__(self, page):
+        super().__init__(title='Tìm dev server trong project', content_width=760, content_height=640)
+        self.page, self.cands, self.checks = page, [], {}
+        tv = Adw.ToolbarView()
+        hdr = Adw.HeaderBar(show_end_title_buttons=False, show_start_title_buttons=False)
+        cancel = Gtk.Button(label='Đóng')
+        cancel.connect('clicked', lambda *_: self.close())
+        self.add_btn = Gtk.Button(label='Thêm đã chọn', css_classes=['suggested-action'], sensitive=False)
+        self.add_btn.connect('clicked', lambda *_: self.add())
+        hdr.pack_start(cancel)
+        hdr.pack_end(self.add_btn)
+        tv.add_top_bar(hdr)
+        self.stack = Gtk.Stack()
+        self.stack.add_named(Adw.StatusPage(icon_name='system-search-symbolic', title='Đang quét project…', description='Đọc package.json, docker-compose, Makefile, script khởi chạy…'), 'wait')
+        body = vbox(8, margin_top=8, margin_bottom=12, margin_start=12, margin_end=12)
+        bar = hbox(8)
+        self.info = label('', ['dim-label'], hexpand=True, xalign=0)
+        bar.append(self.info)
+        bar.append(button('Chọn mục sẵn sàng', css=['flat'], on=lambda: self.select(lambda c: c['default'] and c['ready'])))
+        bar.append(button('Chọn tất cả', css=['flat'], on=lambda: self.select(lambda c: True)))
+        bar.append(button('Bỏ chọn', css=['flat'], on=lambda: self.select(lambda c: False)))
+        body.append(bar)
+        self.box = vbox(14)
+        body.append(Gtk.ScrolledWindow(child=self.box, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER))
+        self.stack.add_named(body, 'list')
+        tv.set_content(self.stack)
+        self.set_child(tv)
+        roots = page.window.store['project_roots'] or P.default_roots()
+        bg(lambda: DC.discover_roots(roots), self.loaded)
+
+    def loaded(self, cands, err):
+        if err:
+            self.stack.get_child_by_name('wait').set_description(err)
+            return
+        self.cands = cands
+        existing = self.page.svcs
+        by_proj = {}
+        for c in cands:
+            by_proj.setdefault(c['project'], []).append(c)
+        for proj, items in by_proj.items():
+            grp = Adw.PreferencesGroup(title=GLib.markup_escape_text(proj))
+            for c in items:
+                added = DC.already_added(c, existing)
+                row = Adw.ActionRow(title=GLib.markup_escape_text(c['title']), subtitle_lines=3)
+                bits = [c['cmd']] + ([f":{c['port']}"] if c['port'] else []) + ([c['note']] if c['note'] else [])
+                row.set_subtitle(GLib.markup_escape_text('  ·  '.join(bits)))
+                chk = Gtk.CheckButton(valign=Gtk.Align.CENTER, sensitive=not added)
+                chk.connect('toggled', lambda *_: self.refresh_count())
+                row.add_prefix(chk)
+                row.set_activatable_widget(chk)
+                tag = 'Đã thêm' if added else ('Sẵn sàng' if c['ready'] else 'Cần chuẩn bị')
+                row.add_suffix(label(tag, ['badge', 'info' if added else ('ok' if c['ready'] else 'warn')], valign=Gtk.Align.CENTER))
+                grp.add(row)
+                self.checks[id(c)] = (c, chk, added)
+            self.box.append(grp)
+        n_new = sum(1 for c in cands if not DC.already_added(c, existing))
+        self.info.set_text(f'{len(cands)} ứng viên trong {len(by_proj)} project · {n_new} chưa thêm')
+        self.select(lambda c: c['default'] and c['ready'])
+        self.stack.set_visible_child_name('list')
+
+    def select(self, pred):
+        for c, chk, added in self.checks.values():
+            if not added:
+                chk.set_active(bool(pred(c)))
+        self.refresh_count()
+
+    def refresh_count(self):
+        n = sum(1 for _c, chk, added in self.checks.values() if chk.get_active() and not added)
+        self.add_btn.set_sensitive(n > 0)
+        self.add_btn.set_label(f'Thêm {n} mục' if n else 'Thêm đã chọn')
+
+    def add(self):
+        chosen = [c for c, chk, added in self.checks.values() if chk.get_active() and not added]
+        self.page.add_services([DC.to_service(c) for c in chosen])
+        self.close()
+
+
 class ServicesPage(Page):
     def __init__(self, window):
         super().__init__(window)
         self.mgr = window.services
         self.sel_id, self.log_seq, self.rows = None, 0, {}
+        self.hdr_start = [icon_btn('list-add-symbolic', 'Thêm service thủ công', lambda: ServiceDialog(self).present(self.get_root())),
+                          button('Tìm trong project', icon='system-search-symbolic', on=lambda: DiscoverDialog(self).present(self.get_root()))]
         box = hbox(0)
         # ---- danh sách bên trái
-        left = vbox(0, width_request=300)
-        head = hbox(6, margin_top=10, margin_bottom=6, margin_start=10, margin_end=10)
-        head.append(label('Services', ['heading'], hexpand=True))
-        head.append(button('Thêm', icon='list-add-symbolic', css=['suggested-action'], on=lambda: ServiceDialog(self).present(self.get_root())))
-        left.append(head)
+        left = vbox(0, width_request=280)
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, css_classes=['navigation-sidebar'])
+        self.list.set_header_func(self._header)
         self.list.connect('row-selected', lambda _l, r: self.select(r.sid if r else None))
         left.append(Gtk.ScrolledWindow(child=self.list, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER))
         box.append(left)
@@ -120,6 +200,19 @@ class ServicesPage(Page):
         self.set_child(box)
         self.every(1, self.tick)
         self.reload()
+
+    def _header(self, row, before):
+        proj = row.project or 'Khác'
+        if before is None or (before.project or 'Khác') != proj:
+            row.set_header(label(proj, ['dim-label', 'caption'], margin_top=10, margin_bottom=2, margin_start=12))
+        else:
+            row.set_header(None)
+
+    def add_services(self, new):
+        self.svcs.extend(new)
+        self.window.store.save()
+        self.reload()
+        self.toast(f'Đã thêm {len(new)} dev server')
 
     # ---- dữ liệu
     @property
@@ -155,9 +248,14 @@ class ServicesPage(Page):
     def reload(self, select=None):
         self.list.remove_all()
         self.rows = {}
+        order = {}
+        for s in self.svcs:
+            order.setdefault(s.get('project') or '', len(order))
+        self.svcs.sort(key=lambda s: order[s.get('project') or ''])  # cùng project đứng cạnh nhau
         for s in self.svcs:
             row = Gtk.ListBoxRow()
             row.sid = s['id']
+            row.project = s.get('project')
             line = hbox(10, margin_top=8, margin_bottom=8, margin_start=10, margin_end=10)
             dot = label('●', ['dim-label'])
             col = vbox(0, hexpand=True)
@@ -182,39 +280,66 @@ class ServicesPage(Page):
     def _rows(self):
         r = self.list.get_first_child()
         while r:
-            yield r
+            if isinstance(r, Gtk.ListBoxRow):  # header của ListBox cũng là con trực tiếp
+                yield r
             r = r.get_next_sibling()
 
     # ---- giao diện chi tiết
     def _detail(self):
-        box = vbox(10, margin_top=14, margin_bottom=14, margin_start=18, margin_end=18)
-        top = hbox(10)
-        self.d_name = label('', ['title-2'], hexpand=True, ellipsize=3)
-        self.d_badge = label('', ['badge'])
-        top.append(self.d_name)
-        top.append(self.d_badge)
-        box.append(top)
-        self.d_meta = label('', ['dim-label'], wrap=True, selectable=True, max_width_chars=70, wrap_mode=Pango.WrapMode.WORD_CHAR)
-        box.append(self.d_meta)
-        self.d_warn = Adw.Banner(revealed=False, button_label='Giải phóng cổng')
-        self.d_warn.connect('button-clicked', lambda *_: self.free_port())
-        box.append(self.d_warn)
-        bar = hbox(6)
+        box = content_box(10)
+        box.set_margin_bottom(12)
+        # hàng tiêu đề: tên + thư mục ở trái, trạng thái ở phải
+        head = hbox(12)
+        names = vbox(0, hexpand=True, valign=Gtk.Align.CENTER)
+        self.d_name = label('', ['page-title'], ellipsize=3)
+        self.d_dir = label('', ['dim-label', 'caption'], ellipsize=1)
+        names.append(self.d_name)
+        names.append(self.d_dir)
+        head.append(names)
+        self.d_badge = label('', ['badge'], valign=Gtk.Align.CENTER)
+        head.append(self.d_badge)
+        box.append(head)
+        # một hàng nút: [Chạy|Dừng|Chạy lại]  ·  [Trình duyệt|Log|VS Code]  ·  ⋯
         self.b_start = button('Chạy', icon='media-playback-start-symbolic', css=['suggested-action'], on=self.start)
         self.b_stop = button('Dừng', icon='media-playback-stop-symbolic', on=self.stop)
         self.b_restart = button('Chạy lại', icon='view-refresh-symbolic', on=self.restart)
-        self.b_open = button('Mở trình duyệt', icon='web-browser-symbolic', on=self.open_browser)
-        self.b_logs = button('Log Viewer', icon='utilities-terminal-symbolic', on=lambda: self.window.open_logs(('service', self.sel_id, self.get(self.sel_id)['name'])))
-        self.b_code = button('VS Code', icon='text-editor-symbolic', css=['flat'], on=lambda: self.guard(lambda: P.open_vscode(self.get(self.sel_id)['cwd'])))
-        self.b_edit = button('Sửa', css=['flat'], on=lambda: ServiceDialog(self, self.get(self.sel_id)).present(self.get_root()))
-        self.b_del = button('Xoá', css=['flat'], on=self.delete_service)
-        for b in (self.b_start, self.b_stop, self.b_restart, self.b_open, self.b_logs, self.b_code, self.b_edit, self.b_del):
-            bar.append(b)
+        self.b_open = button('Trình duyệt', icon='web-browser-symbolic', on=self.open_browser)
+        self.b_logs = button('Log', icon='utilities-terminal-symbolic', on=lambda: self.window.open_logs(('service', self.sel_id, self.get(self.sel_id)['name'])))
+        self.b_code = button('VS Code', icon='text-editor-symbolic', on=lambda: self.guard(lambda: P.open_vscode(self.get(self.sel_id)['cwd'])))
+        more = Gtk.MenuButton(icon_name='view-more-symbolic', tooltip_text='Khác', valign=Gtk.Align.CENTER)
+        pop = Gtk.Popover()
+        pbox = vbox(2, margin_top=4, margin_bottom=4, margin_start=4, margin_end=4)
+        for text, fn, css in (('Sửa service…', lambda: (pop.popdown(), ServiceDialog(self, self.get(self.sel_id)).present(self.get_root())), ['flat']),
+                              ('Xoá khỏi danh sách', lambda: (pop.popdown(), self.delete_service()), ['flat', 'destructive-action'])):
+            b = button(text, css=css, on=fn)
+            b.set_halign(Gtk.Align.FILL)
+            pbox.append(b)
+        pop.set_child(pbox)
+        more.set_popover(pop)
+        bar = hbox(10)
+        bar.append(linked(self.b_start, self.b_stop, self.b_restart))
+        bar.append(Gtk.Box(hexpand=True))
+        bar.append(linked(self.b_open, self.b_logs, self.b_code))
+        bar.append(more)
         box.append(bar)
+        self.d_warn = InfoStrip('warning')
+        box.append(self.d_warn)
+        self.d_note = InfoStrip('info')
+        box.append(self.d_note)
+        # thông tin gọn gàng dạng danh sách
+        info = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=['boxed-list'])
+        self.r_cmd = Adw.ActionRow(title='Lệnh', subtitle_selectable=True)
+        self.r_state = Adw.ActionRow(title='Trạng thái')
+        self.r_port = Adw.ActionRow(title='Cổng')
+        for r in (self.r_cmd, self.r_state, self.r_port):
+            r.add_css_class('property')
+            info.append(r)
+        self.r_cmd.add_css_class('mono')
+        box.append(info)
         self.log = Gtk.TextView(editable=False, monospace=True, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD_CHAR, left_margin=8, right_margin=8, top_margin=6, bottom_margin=6)
         self.log.add_css_class('mono')
         self.logbuf = self.log.get_buffer()
-        sw = Gtk.ScrolledWindow(child=self.log, vexpand=True)
+        sw = Gtk.ScrolledWindow(child=self.log, vexpand=True, min_content_height=140)
         sw.add_css_class('codebox')
         self.log_sw = sw
         box.append(sw)
@@ -288,27 +413,37 @@ class ServicesPage(Page):
         st = self.mgr.status(s['id'])
         txt, css = STATE[st['state']]
         self.d_name.set_text(s['name'])
+        self.d_dir.set_text(s['cwd'])
         for c in ('ok', 'info', 'bad'):
             self.d_badge.remove_css_class(c)
         self.d_badge.add_css_class(css)
         self.d_badge.set_text(txt)
         running = st['state'] == 'running'
-        meta = f"$ {s['cmd']}\n{s['cwd']}"
+        self.r_cmd.set_subtitle(GLib.markup_escape_text(s['cmd']))
         if running:
-            meta += f"\nPID {st['pid']} · chạy được {duration(time.time() - st['since'])}"
+            self.r_state.set_subtitle(f"PID {st['pid']} · chạy được {duration(time.time() - st['since'])}")
         elif st['rc'] is not None:
-            meta += f"\nThoát với mã {st['rc']}"
+            self.r_state.set_subtitle(f"Đã thoát với mã {st['rc']}")
+        else:
+            self.r_state.set_subtitle('Chưa chạy')
+        port_open = bool(s['port']) and S.port_open(s['port'])
+        self.r_port.set_visible(bool(s['port']))
         if s['port']:
-            up = S.port_open(s['port'])
-            meta += f"\nCổng {s['port']}: " + ('đang mở' if up else 'chưa mở')
-        self.d_meta.set_text(meta)
+            self.r_port.set_title(f"Cổng {s['port']}")
+            self.r_port.set_subtitle('đang mở' if port_open else 'chưa mở')
         for b, on in ((self.b_start, not running), (self.b_stop, running), (self.b_restart, True), (self.b_open, bool(s['port']) and running)):
             b.set_sensitive(on)
-        conflict = None
-        if s['port'] and not running and S.port_open(s['port']):
-            conflict = S.port_owner(s['port'])
-            self.d_warn.set_title(f"Cổng {s['port']} đang bị {conflict[1] if conflict else 'một process khác'} chiếm" + (f' (PID {conflict[0]})' if conflict and conflict[0] else ''))
-        self.d_warn.set_revealed(bool(conflict) or bool(s['port'] and not running and S.port_open(s['port'])))
+        if s['port'] and not running and port_open:
+            owner = S.port_owner(s['port'])
+            self.d_warn.show(f"Cổng {s['port']} đang bị {owner[1] if owner else 'một process khác'} chiếm" + (f' (PID {owner[0]})' if owner and owner[0] else ''),
+                             None, 'Giải phóng', self.free_port)
+        else:
+            self.d_warn.hide()
+        note = DC.setup_note(s)
+        if note and not running:
+            self.d_note.show(note, None, 'Mở terminal', lambda: self.guard(lambda: P.open_terminal(os.path.expanduser(s['cwd']))))
+        else:
+            self.d_note.hide()
         # log tăng dần
         run = self.mgr.runs.get(s['id'])
         if run:

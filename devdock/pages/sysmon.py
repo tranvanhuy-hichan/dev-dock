@@ -9,7 +9,7 @@ from gi.repository import Adw, Gtk  # noqa: E402
 
 from ..lib import dockercli  # noqa: E402
 from ..lib.sysmon import Monitor, list_ports  # noqa: E402
-from ..ui import (DataTable, Page, Sparkline, bar, bg, button, clear, duration, esc, hbox, human, label, rate, vbox)  # noqa: E402
+from ..ui import (DataTable, Page, SelectionBar, Sparkline, bar, bg, button, clear, content_box, duration, esc, hbox, human, label, rate, toolbar, vbox)  # noqa: E402
 
 HIST = 60
 
@@ -45,22 +45,15 @@ class SysMonitorPage(Page):
         self.mon = Monitor()
         self.hist = {k: deque(maxlen=HIST) for k in ('cpu', 'mem', 'rx', 'tx', 'gpu')}
         self.snap_busy = self.proc_busy = self.port_busy = self.dock_busy = False
-        self.stack = Adw.ViewStack()
-        root = vbox(0)
-        head = hbox(8, margin_top=8, margin_bottom=0, margin_start=16, margin_end=16, halign=Gtk.Align.CENTER)
-        head.append(Adw.ViewSwitcher(stack=self.stack, policy=Adw.ViewSwitcherPolicy.WIDE))
-        root.append(head)
-        self.info = label('', ['dim-label', 'caption'], xalign=0.5, margin_top=4)
-        root.append(self.info)
+        self.stack = Adw.ViewStack(vexpand=True)
+        self.hdr_title = Adw.ViewSwitcher(stack=self.stack, policy=Adw.ViewSwitcherPolicy.WIDE)  # tab chuyển trang nằm trên thanh tiêu đề
         self.stack.add_titled_with_icon(self._overview(), 'overview', 'Tổng quan', 'view-grid-symbolic')
         self.stack.add_titled_with_icon(self._procs(), 'procs', 'Process', 'view-list-symbolic')
         self.stack.add_titled_with_icon(self._ports(), 'ports', 'Cổng mạng', 'network-wired-symbolic')
         self.stack.add_titled_with_icon(self._disks(), 'disks', 'Ổ đĩa', 'drive-harddisk-symbolic')
         self.stack.add_titled_with_icon(self._net(), 'net', 'Network', 'network-transmit-receive-symbolic')
         self.stack.add_titled_with_icon(self._docker(), 'docker', 'Docker', 'package-x-generic-symbolic')
-        self.stack.set_vexpand(True)
-        root.append(self.stack)
-        self.set_child(root)
+        self.set_child(self.stack)
         self.every(1, self.tick_snapshot).every(2, self.tick_procs).every(3, self.tick_ports).every(4, self.tick_docker)
 
     def show_tool(self, name):
@@ -72,7 +65,10 @@ class SysMonitorPage(Page):
     # ---------------- Tổng quan ----------------
     def _overview(self):
         sc = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
-        box = vbox(14, margin_top=14, margin_bottom=16, margin_start=18, margin_end=18)
+        box = content_box(12)
+        box.set_margin_bottom(12)
+        self.info = label('', ['dim-label'], xalign=0, ellipsize=3)
+        box.append(self.info)
         grid = Gtk.Grid(column_spacing=14, row_spacing=14, column_homogeneous=True)
         self.sp = {k: Sparkline(c, 56, m) for k, c, m in (('cpu', (.21, .52, .89), 100), ('mem', (.2, .82, .6), 100), ('rx', (.2, .82, .6), None),
                                                           ('tx', (.96, .72, .1), None), ('gpu', (.96, .6, .1), 100))}
@@ -160,17 +156,11 @@ class SysMonitorPage(Page):
 
     # ---------------- Process ----------------
     def _procs(self):
-        box = vbox(8, margin_top=12, margin_bottom=14, margin_start=18, margin_end=18)
-        bar_ = hbox(8)
+        root = content_box()
+        root.set_margin_bottom(12)
         self.p_search = Gtk.SearchEntry(placeholder_text='Tìm theo tên, PID, lệnh…', hexpand=True)
         self.p_search.connect('search-changed', lambda e: self.ptable.set_query(e.get_text()))
-        self.p_term = button('Dừng', css=['flat'], on=lambda: self.kill_proc(False))
-        self.p_kill = button('Buộc dừng', css=['destructive-action'], on=lambda: self.kill_proc(True))
-        for b in (self.p_term, self.p_kill):
-            b.set_sensitive(False)
-        for w in (self.p_search, self.p_term, self.p_kill):
-            bar_.append(w)
-        box.append(bar_)
+        root.append(toolbar(self.p_search))
         cols = [
             {'title': 'PID', 'get': lambda d: str(d['pid']), 'sort': lambda d: d['pid'], 'width': 80, 'css': ['tnum']},
             {'title': 'Tên', 'get': lambda d: d['name'], 'sort': lambda d: d['name'].lower(), 'expand': True, 'tip': lambda d: d['cmd'] or d['name']},
@@ -180,10 +170,16 @@ class SysMonitorPage(Page):
             {'title': 'Trạng thái', 'get': lambda d: d['status'], 'sort': lambda d: d['status'], 'width': 110},
         ]
         self.ptable = DataTable(cols, key=lambda d: d['pid'], search_text=lambda d: f"{d['name']} {d['pid']} {d['cmd']} {d['user']}",
-                                on_select=lambda d: [b.set_sensitive(d is not None) for b in (self.p_term, self.p_kill)])
+                                on_select=lambda d: self.pbar.select(d['name'] if d else None, f"PID {d['pid']} · {d['user'] or ''}" if d else ''))
         self.ptable.sort_by(3, True)
-        box.append(self.ptable)
-        return box
+        root.append(self.ptable)
+        self.pbar = SelectionBar()
+        self.pbar.add(button('Dừng', icon='media-playback-stop-symbolic', on=lambda: self.kill_proc(False)),
+                      button('Buộc dừng', icon='process-stop-symbolic', css=['destructive-action'], on=lambda: self.kill_proc(True)))
+        outer = vbox(0)
+        outer.append(root)
+        outer.append(self.pbar)
+        return outer
 
     def tick_procs(self):
         if self.tab() != 'procs' or self.proc_busy:
@@ -212,15 +208,11 @@ class SysMonitorPage(Page):
 
     # ---------------- Cổng mạng ----------------
     def _ports(self):
-        box = vbox(8, margin_top=12, margin_bottom=14, margin_start=18, margin_end=18)
-        bar_ = hbox(8)
+        root = content_box()
+        root.set_margin_bottom(8)
         s = Gtk.SearchEntry(placeholder_text='Tìm port, process…', hexpand=True)
         s.connect('search-changed', lambda e: self.port_table.set_query(e.get_text()))
-        self.port_btn = button('Giải phóng cổng', css=['destructive-action'], on=self.free_port)
-        self.port_btn.set_sensitive(False)
-        bar_.append(s)
-        bar_.append(self.port_btn)
-        box.append(bar_)
+        root.append(toolbar(s))
         cols = [
             {'title': 'Port', 'get': lambda d: str(d['port']), 'sort': lambda d: d['port'], 'width': 90, 'css': ['tnum']},
             {'title': 'Giao thức', 'get': lambda d: d['protocol'], 'sort': lambda d: d['protocol'], 'width': 100},
@@ -230,11 +222,16 @@ class SysMonitorPage(Page):
         ]
         self.port_table = DataTable(cols, key=lambda d: (d['port'], d['protocol'], d['pid'], d['address']),
                                     search_text=lambda d: f"{d['port']} {d['process']} {d['pid']} {d['address']}",
-                                    on_select=lambda d: self.port_btn.set_sensitive(bool(d and d['pid'])))
+                                    on_select=lambda d: self.port_bar.select((f"Cổng {d['port']} · {d['process']}") if d else None, (f"PID {d['pid']}" if d and d['pid'] else 'không xác định được process (thiếu quyền)')))
         self.port_table.sort_by(0, False)
-        box.append(self.port_table)
-        box.append(label('Process của user khác có thể không hiện nếu thiếu quyền.', ['dim-label', 'caption']))
-        return box
+        root.append(self.port_table)
+        self.port_bar = SelectionBar()
+        self.port_btn = button('Giải phóng cổng', icon='process-stop-symbolic', css=['destructive-action'], on=self.free_port)
+        self.port_bar.add(self.port_btn)
+        outer = vbox(0)
+        outer.append(root)
+        outer.append(self.port_bar)
+        return outer
 
     def tick_ports(self):
         if self.tab() != 'ports' or self.port_busy:
@@ -262,7 +259,8 @@ class SysMonitorPage(Page):
 
     # ---------------- Ổ đĩa / Network ----------------
     def _disks(self):
-        self.disk_box = vbox(10, margin_top=14, margin_bottom=16, margin_start=18, margin_end=18)
+        self.disk_box = content_box(10)
+        self.disk_box.set_margin_bottom(12)
         return Gtk.ScrolledWindow(child=self.disk_box, hscrollbar_policy=Gtk.PolicyType.NEVER)
 
     def _disks_render(self, disks):
@@ -279,8 +277,9 @@ class SysMonitorPage(Page):
             self.disk_box.append(c)
 
     def _net(self):
-        box = vbox(12, margin_top=14, margin_bottom=16, margin_start=18, margin_end=18)
-        top = hbox(14, homogeneous=True)
+        box = content_box(12)
+        box.set_margin_bottom(12)
+        top = hbox(12, homogeneous=True)
         self.sp['rx2'], self.sp['tx2'] = Sparkline((.2, .82, .6), 56), Sparkline((.96, .72, .1), 56)
         self.n_rx = card('Download', '—', '', self.sp['rx2'])
         self.n_tx = card('Upload', '—', '', self.sp['tx2'])
@@ -303,7 +302,8 @@ class SysMonitorPage(Page):
 
     # ---------------- Docker ----------------
     def _docker(self):
-        box = vbox(8, margin_top=12, margin_bottom=14, margin_start=18, margin_end=18)
+        box = content_box(8)
+        box.set_margin_bottom(12)
         self.dock_stack = Gtk.Stack()
         self.dock_msg = Adw.StatusPage(icon_name='package-x-generic-symbolic', title='Đang đọc thống kê container…')
         self.dock_stack.add_named(self.dock_msg, 'msg')

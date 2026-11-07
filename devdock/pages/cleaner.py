@@ -14,7 +14,7 @@ from gi.repository import Adw, Gio, GLib, GObject, Graphene, Gtk  # noqa: E402
 from ..cleaner import scanner  # noqa: E402
 from ..cleaner.scanner import GB, MB, fmt_size  # noqa: E402
 from ..cleaner.widgets import Ring, Treemap  # noqa: E402
-from ..ui import Page, hbox, ui, vbox  # noqa: E402
+from ..ui import Page, hbox, icon_btn, ui, vbox  # noqa: E402
 
 GROUPS = [
     ('project', 'Build / cài đặt trong project', '#2dd4bf'),
@@ -69,29 +69,20 @@ class CleanerPage(Page):
 
     # ---------------- Dựng giao diện ----------------
     def _build(self):
-        self.stack = Adw.ViewStack()
+        self.stack = Adw.ViewStack(vexpand=True)
         self.split = Adw.OverlaySplitView(min_sidebar_width=300, max_sidebar_width=420, sidebar_width_fraction=0.34)
-        top = hbox(6, margin_top=6, margin_bottom=2, margin_start=10, margin_end=10)
-        toggle = Gtk.ToggleButton(icon_name='sidebar-show-symbolic', tooltip_text='Hiện/ẩn bảng điều khiển', css_classes=['flat'])
+        # thanh tiêu đề: bật/tắt bảng điều khiển (trái), tab Danh sách/Dung lượng (giữa), xuất CSV/thùng rác/cài đặt (phải)
+        toggle = icon_btn('sidebar-show-symbolic', 'Hiện/ẩn bảng điều khiển', toggle=True)
         self.split.bind_property('show-sidebar', toggle, 'active', GObject.BindingFlags.BIDIRECTIONAL | GObject.BindingFlags.SYNC_CREATE)
-        top.append(toggle)
-        top.append(Gtk.Box(hexpand=True))
-        top.append(Adw.ViewSwitcher(stack=self.stack, policy=Adw.ViewSwitcherPolicy.WIDE))
-        top.append(Gtk.Box(hexpand=True))
-        for icon, tip, cb in (('document-save-symbolic', 'Xuất CSV…', self.export_csv), ('user-trash-symbolic', 'Mở thùng rác', lambda *_: Gio.AppInfo.launch_default_for_uri('trash:///', None)),
-                              ('emblem-system-symbolic', 'Cài đặt', self.open_settings)):
-            b = Gtk.Button(icon_name=icon, tooltip_text=tip, css_classes=['flat'])
-            b.connect('clicked', cb)
-            top.append(b)
+        self.hdr_start = [toggle]
+        self.hdr_title = Adw.ViewSwitcher(stack=self.stack, policy=Adw.ViewSwitcherPolicy.WIDE)
+        self.hdr_end = [icon_btn('document-save-symbolic', 'Xuất CSV…', self.export_csv), icon_btn('user-trash-symbolic', 'Mở thùng rác', lambda: Gio.AppInfo.launch_default_for_uri('trash:///', None)),
+                        icon_btn('emblem-system-symbolic', 'Cài đặt', self.open_settings)]
         self.split.set_sidebar(self._build_sidebar())
         self.stack.add_titled_with_icon(self._build_list_page(), 'list', 'Danh sách', 'view-list-symbolic')
         self.stack.add_titled_with_icon(self._build_tree_page(), 'tree', 'Dung lượng', 'drive-harddisk-symbolic')
         self.stack.connect('notify::visible-child-name', self._on_page)
-        self.stack.set_vexpand(True)
-        content = vbox(0)
-        content.append(top)
-        content.append(self.stack)
-        self.split.set_content(content)
+        self.split.set_content(self.stack)
         self.set_child(self.split)
 
     def _build_sidebar(self):

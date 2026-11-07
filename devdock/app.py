@@ -18,13 +18,20 @@ ICON_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 
 # (id, tên, icon, lớp trang)
 MODULES = [
-    ('projects', 'Projects', 'folder-symbolic', 'devdock.pages.projects:ProjectsPage'),
-    ('services', 'Dev Services', 'media-playback-start-symbolic', 'devdock.pages.services:ServicesPage'),
-    ('env', 'Env Manager', 'dialog-password-symbolic', 'devdock.pages.envs:EnvPage'),
-    ('logs', 'Log Viewer', 'utilities-terminal-symbolic', 'devdock.pages.logs:LogsPage'),
-    ('sysmon', 'SysMonitor', 'utilities-system-monitor-symbolic', 'devdock.pages.sysmon:SysMonitorPage'),
-    ('docker', 'DockerDesk', 'package-x-generic-symbolic', 'devdock.pages.docker:DockerPage'),
-    ('cleaner', 'DiskCleaner', 'edit-clear-all-symbolic', 'devdock.pages.cleaner:CleanerPage'),
+    # (id, tên, icon, lớp trang, nhóm trong sidebar)
+    ('projects', 'Projects', 'folder-symbolic', 'devdock.pages.projects:ProjectsPage', 'Project'),
+    ('git', 'Git', 'media-playlist-repeat-symbolic', 'devdock.pages.gitpage:GitPage', 'Project'),
+    ('services', 'Dev Services', 'media-playback-start-symbolic', 'devdock.pages.services:ServicesPage', 'Project'),
+    ('env', 'Env Manager', 'dialog-password-symbolic', 'devdock.pages.envs:EnvPage', 'Project'),
+    ('deps', 'Dependency', 'software-update-available-symbolic', 'devdock.pages.deps:DepsPage', 'Project'),
+    ('docker', 'DockerDesk', 'package-x-generic-symbolic', 'devdock.pages.docker:DockerPage', 'Chạy & dữ liệu'),
+    ('database', 'Database', 'drive-multidisk-symbolic', 'devdock.pages.database:DatabasePage', 'Chạy & dữ liệu'),
+    ('api', 'API Tester', 'send-to-symbolic', 'devdock.pages.apitester:ApiPage', 'Chạy & dữ liệu'),
+    ('logs', 'Log Viewer', 'utilities-terminal-symbolic', 'devdock.pages.logs:LogsPage', 'Chạy & dữ liệu'),
+    ('sysmon', 'SysMonitor', 'utilities-system-monitor-symbolic', 'devdock.pages.sysmon:SysMonitorPage', 'Hệ thống'),
+    ('watch', 'Giám sát', 'dialog-warning-symbolic', 'devdock.pages.watchdog:WatchPage', 'Hệ thống'),
+    ('cleaner', 'DiskCleaner', 'edit-clear-all-symbolic', 'devdock.pages.cleaner:CleanerPage', 'Hệ thống'),
+    ('ollama', 'Ollama AI', 'chat-bubble-text-symbolic', 'devdock.pages.ollama:OllamaPage', 'AI'),
 ]
 
 
@@ -94,13 +101,16 @@ class MainWindow(Adw.ApplicationWindow):
         split = Adw.NavigationSplitView(min_sidebar_width=200, max_sidebar_width=240, sidebar_width_fraction=0.2)
         # --- sidebar
         self.nav = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, css_classes=['navigation-sidebar'])
-        for mid, name, icon, _cls in MODULES:
+        self.nav.set_header_func(lambda row, before: row.set_header(label(row.group, ['dim-label', 'caption'], margin_top=10, margin_bottom=2, margin_start=12)
+                                                                      if before is None or before.group != row.group else None))
+        for idx, (mid, name, icon, _cls, group) in enumerate(MODULES, 1):
             row = Gtk.ListBoxRow()
-            row.mid = mid
-            line = Gtk.Box(spacing=12, margin_top=8, margin_bottom=8, margin_start=6, margin_end=6)
+            row.mid, row.group = mid, group
+            line = Gtk.Box(spacing=12, margin_top=7, margin_bottom=7, margin_start=6, margin_end=6)
             line.append(Gtk.Image(icon_name=icon))
             line.append(label(name, hexpand=True))
-            line.append(label(f'Ctrl+{len(self.nav_rows()) + 1}', ['dim-label', 'caption']))
+            if idx <= 9:
+                line.append(label(f'Ctrl+{idx}', ['dim-label', 'caption']))
             row.set_child(line)
             self.nav.append(row)
         self.nav.connect('row-selected', lambda _l, r: r and self.show_module(r.mid))
@@ -117,6 +127,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=120)
         self.content_title = Adw.WindowTitle(title='')
         head = Adw.HeaderBar()
+        self.head, self._hdr = head, []
         head.set_title_widget(self.content_title)
         menu = Gio.Menu()
         sec = Gio.Menu()
@@ -126,6 +137,7 @@ class MainWindow(Adw.ApplicationWindow):
         menu.append_section(None, sec)
         menu.append('Lệnh nhanh', 'win.palette')
         menu.append('Giới thiệu DevDock', 'win.about')
+        menu.append('Thoát hẳn DevDock (Ctrl+Q)', 'app.quit')
         head.pack_end(Gtk.MenuButton(icon_name='open-menu-symbolic', menu_model=menu, primary=True, tooltip_text='Menu'))
         tv = Adw.ToolbarView()
         tv.add_top_bar(head)
@@ -149,22 +161,42 @@ class MainWindow(Adw.ApplicationWindow):
             a = Gio.SimpleAction.new(f'go-{mid}', None)
             a.connect('activate', lambda *_a, m=mid: self.select_module(m))
             self.add_action(a)
-            app.set_accels_for_action(f'win.go-{mid}', [f'<primary>{i}'])
+            if i <= 9:
+                app.set_accels_for_action(f'win.go-{mid}', [f'<primary>{i}'])
         self.set_theme(store['theme'])
         self.connect('close-request', self._on_close)
+        # Giám sát tài nguyên chạy ở cấp ứng dụng (không cần mở trang Giám sát). Phải có trước khi dựng trang đầu tiên.
+        from .lib.watchdog import WatchService
+        self.watch = WatchService(self)
         self.select_module(store['module'] if store['module'] in [m[0] for m in MODULES] else 'projects')
+        self.watch.start()
+        if self.watch.config['background'] and hasattr(app, 'set_hold'):
+            app.set_hold(True)  # chế độ chạy nền: giữ ứng dụng sống khi cửa sổ bị ẩn
 
-    def _on_close(self, *_):
+    def close_decision(self):
+        """'hide' nếu bật "tiếp tục giám sát khi đóng cửa sổ" (ẩn cửa sổ, giữ ứng dụng sống), ngược lại 'quit'."""
+        return 'hide' if self.watch.config.get('background') else 'quit'
+
+    def shutdown_all(self):
+        """Dọn dẹp trước khi thoát hẳn: dừng luồng của các trang, giám sát và các dev service (tránh tiến trình mồ côi)."""
+        self.watch.stop()
         for p in self.pages.values():
             if hasattr(p, 'shutdown'):
                 p.shutdown()
-        self.services.shutdown()  # dừng các dev service đang chạy để không để lại tiến trình mồ côi
+        self.services.shutdown()
+
+    def _on_close(self, *_):
+        if self.close_decision() == 'hide':
+            self.set_visible(False)  # dev service và giám sát vẫn chạy; mở lại bằng `devdock` hoặc bấm thông báo
+            return True
+        self.shutdown_all()
         return False
 
     def nav_rows(self):
         out, r = [], self.nav.get_first_child()
         while r:
-            out.append(r)
+            if isinstance(r, Gtk.ListBoxRow):  # header của ListBox cũng là con trực tiếp
+                out.append(r)
             r = r.get_next_sibling()
         return out
 
@@ -189,14 +221,37 @@ class MainWindow(Adw.ApplicationWindow):
         self.stack.set_visible_child_name(mid)
         self.current = mid
         self.content_title.set_title(next(m[1] for m in MODULES if m[0] == mid))
+        self.apply_header(self.pages[mid])
         if self.store['module'] != mid:
             self.store['module'] = mid
             self.store.save()
+
+    def apply_header(self, page):
+        """Đặt tiêu đề/nút của trang lên thanh tiêu đề cửa sổ (chuẩn libadwaita: điều khiển theo ngữ cảnh nằm ở header)."""
+        for w in self._hdr:
+            self.head.remove(w)
+        self._hdr = []
+        self.content_title.set_subtitle(getattr(page, 'hdr_subtitle', '') or '')
+        self.head.set_title_widget(getattr(page, 'hdr_title', None) or self.content_title)
+        for w in getattr(page, 'hdr_start', ()):
+            self.head.pack_start(w)
+            self._hdr.append(w)
+        for w in reversed(list(getattr(page, 'hdr_end', ()))):  # pack_end: widget đầu tiên nằm ngoài cùng bên phải
+            self.head.pack_end(w)
+            self._hdr.append(w)
 
     def open_logs(self, source):
         """Mở Log Viewer với một nguồn log, vd. ('docker', id, name)."""
         self.select_module('logs')
         self.pages['logs'].open_source(source)
+
+    def notify(self, title, body='', nid=None, urgent=False):
+        """Thông báo desktop (Gio.Notification). Bấm vào thông báo sẽ mở lại cửa sổ DevDock."""
+        n = Gio.Notification.new(title)
+        n.set_body(body)
+        n.set_priority(Gio.NotificationPriority.URGENT if urgent else Gio.NotificationPriority.NORMAL)
+        n.set_default_action('app.show')
+        self.get_application().send_notification(nid, n)
 
     def toast(self, msg):
         self.toasts.add_toast(Adw.Toast(title=msg, timeout=4))
@@ -208,7 +263,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.store.save()
 
     def open_palette(self):
-        items = [{'label': f'Mở {m[1]}', 'hint': f'Ctrl+{i}', 'run': lambda mid=m[0]: self.select_module(mid)} for i, m in enumerate(MODULES, 1)]
+        items = [{'label': f'Mở {m[1]}', 'hint': f'Ctrl+{i}' if i <= 9 else '', 'run': lambda mid=m[0]: self.select_module(mid)} for i, m in enumerate(MODULES, 1)]
         items += [{'label': 'Giao diện sáng', 'run': lambda: self.set_theme('light', True)}, {'label': 'Giao diện tối', 'run': lambda: self.set_theme('dark', True)},
                   {'label': 'Giao diện theo hệ thống', 'run': lambda: self.set_theme('system', True)}]
         Palette(items).present(self)
@@ -221,8 +276,31 @@ class MainWindow(Adw.ApplicationWindow):
 
 class App(Adw.Application):
     def __init__(self):
-        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+        # Chế độ kiểm thử (chụp ảnh/test giao diện) chạy tách biệt, không đánh thức cửa sổ DevDock đang mở của người dùng
+        isolated = bool(os.environ.get('DEVDOCK_SHOTS') or os.environ.get('DEVDOCK_TEST'))
+        flags = Gio.ApplicationFlags.HANDLES_COMMAND_LINE | (Gio.ApplicationFlags.NON_UNIQUE if isolated else Gio.ApplicationFlags.DEFAULT_FLAGS)
+        super().__init__(application_id=APP_ID, flags=flags)
         self.win = None
+        self._held = False
+
+    def set_hold(self, on):
+        """Giữ ứng dụng sống kể cả khi không còn cửa sổ nào hiện (chế độ giám sát nền)."""
+        if on and not self._held:
+            self.hold()
+            self._held = True
+        elif not on and self._held:
+            self.release()
+            self._held = False
+
+    def do_command_line(self, cl):
+        """`devdock --hidden` (autostart): khởi động không hiện cửa sổ, nhưng CHỈ khi đã bật chạy nền — nếu không thì hiện cửa sổ như thường."""
+        from .lib.watchdog import load_config
+        hidden = '--hidden' in (cl.get_arguments() or [])
+        if hidden and load_config()['background'] and self.win is None:
+            self.win = MainWindow(self, self.store)  # tạo nhưng không present
+        else:
+            self.activate()
+        return 0
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -234,8 +312,11 @@ class App(Adw.Application):
         Gtk.IconTheme.get_for_display(display).add_search_path(ICON_DIR)
         Gtk.Window.set_default_icon_name(APP_ID)
         self.set_accels_for_action('app.quit', ['<primary>q'])
+        sh = Gio.SimpleAction.new('show', None)
+        sh.connect('activate', lambda *_: self.do_activate())
+        self.add_action(sh)
         q = Gio.SimpleAction.new('quit', None)
-        q.connect('activate', lambda *_: self.quit())
+        q.connect('activate', lambda *_: ((self.win.shutdown_all() if self.win else None), self.quit()))
         self.add_action(q)
 
     def do_activate(self):

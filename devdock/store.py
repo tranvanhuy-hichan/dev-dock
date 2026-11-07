@@ -12,6 +12,8 @@ DEFAULTS = {
     'compose_files': [],
     # Log Viewer
     'log_files': [],
+    # Ollama
+    'ollama_host': '', 'ollama_temp': 0.7, 'ollama_ctx': 0, 'ollama_think': True,
 }
 
 

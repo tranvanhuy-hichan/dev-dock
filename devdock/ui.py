@@ -37,6 +37,17 @@ progressbar.g-system progress { background: #fbbf24; }
 .codebox textview, .codebox text { background: transparent; }
 textview.mono { font-family: monospace; font-size: 11pt; }
 .metric { padding: 14px; }
+.strip { padding: 8px 12px; border-radius: 8px; background: alpha(@warning_bg_color, .16); }
+.strip.info { background: alpha(@accent_bg_color, .14); }
+.strip.error { background: alpha(@error_bg_color, .16); }
+.user-bubble { background: @accent_bg_color; color: @accent_fg_color; border-radius: 16px; padding: 8px 14px; }
+.ai-bubble { background: alpha(currentColor, .07); border-radius: 16px; padding: 8px 14px; }
+.codeblock { background: alpha(black, .28); border-radius: 8px; padding: 6px 10px; }
+.thinking { font-style: italic; opacity: .75; }
+.page-title { font-weight: 700; font-size: 15pt; }
+.sidebar-pane { background: alpha(@sidebar_bg_color, .5); }
+actionbar > revealer > box { padding: 6px 12px; }
+.linked > button { min-height: 30px; }
 """
 
 
@@ -252,8 +263,9 @@ class DataTable(Gtk.Box):
         self.sorted = Gtk.SortListModel(model=Gtk.FilterListModel(model=self.store, filter=self.filter), sorter=self.view.get_sorter())
         self.sel = Gtk.SingleSelection(model=self.sorted, autoselect=False, can_unselect=True)
         self.view.set_model(self.sel)
+        self._on_select, self._quiet = on_select, False
         if on_select:
-            self.sel.connect('notify::selected-item', lambda *_: on_select(self.selected()))
+            self.sel.connect('notify::selected-item', lambda *_: (not self._quiet) and on_select(self.selected()))
         self.scroller = Gtk.ScrolledWindow(child=self.view, vexpand=True, hexpand=True)
         self.scroller.add_css_class('codebox')
         self.append(self.scroller)
@@ -303,31 +315,136 @@ class DataTable(Gtk.Box):
         return it.d if it else None
 
     def set_rows(self, rows):
+        """Thay toàn bộ dữ liệu nhưng giữ dòng đang chọn và vị trí cuộn. Callback on_select chỉ gọi MỘT lần sau khi cập nhật xong
+        (không gọi khi bảng tạm thời rỗng), nên các khung chi tiết không bị reset mỗi lần làm mới."""
         keep = self.selected()
         keep_key = self.key(keep) if keep else None
         adj = self.scroller.get_vadjustment()
         pos = adj.get_value()
-        self.store.splice(0, self.store.get_n_items(), [Row(r) for r in rows])
-        if keep_key is not None:
-            for i in range(self.sorted.get_n_items()):
-                if self.key(self.sorted.get_item(i).d) == keep_key:
-                    self.sel.set_selected(i)
-                    break
+        self._quiet = True
+        try:
+            self.store.splice(0, self.store.get_n_items(), [Row(r) for r in rows])
+            if keep_key is not None:
+                for i in range(self.sorted.get_n_items()):
+                    if self.key(self.sorted.get_item(i).d) == keep_key:
+                        self.sel.set_selected(i)
+                        break
+        finally:
+            self._quiet = False
+        now = self.selected()
+        if self._on_select and (now is not None or keep_key is not None):
+            self._on_select(now)
         GLib.idle_add(lambda: adj.set_value(min(pos, max(0, adj.get_upper() - adj.get_page_size()))) or False)
+
+
+def icon_btn(icon, tip, on=None, css=None, toggle=False):
+    b = Gtk.ToggleButton(icon_name=icon, tooltip_text=tip) if toggle else Gtk.Button(icon_name=icon, tooltip_text=tip)
+    for c in css or []:
+        b.add_css_class(c)
+    if on and not toggle:
+        b.connect('clicked', lambda *_: on())
+    return b
+
+
+def linked(*widgets):
+    box = Gtk.Box(css_classes=['linked'], valign=Gtk.Align.CENTER)
+    for w in widgets:
+        box.append(w)
+    return box
+
+
+def toolbar(*widgets, spacing=8):
+    """Thanh công cụ một hàng: các widget xếp ngang, căn giữa theo chiều dọc, lề đồng nhất."""
+    box = hbox(spacing, valign=Gtk.Align.CENTER)
+    for w in widgets:
+        box.append(w)
+    return box
+
+
+def content_box(spacing=12):
+    """Khung nội dung chuẩn của mọi trang: lề 12px."""
+    return vbox(spacing, margin_top=12, margin_bottom=0, margin_start=12, margin_end=12)
+
+
+class InfoStrip(Gtk.Box):
+    """Dải thông báo gọn (thay Adw.Banner căng ngang): icon + một dòng chữ căn trái + nút hành động tuỳ chọn."""
+
+    def __init__(self, kind='warning'):
+        super().__init__(spacing=10, visible=False)
+        self.add_css_class('strip')
+        if kind != 'warning':
+            self.add_css_class(kind)
+        icon = {'warning': 'dialog-warning-symbolic', 'info': 'dialog-information-symbolic', 'error': 'dialog-error-symbolic'}[kind]
+        self.append(Gtk.Image(icon_name=icon))
+        self.text = Gtk.Label(xalign=0, hexpand=True, ellipsize=3)
+        self.append(self.text)
+        self.btn = Gtk.Button(css_classes=['flat'], visible=False, valign=Gtk.Align.CENTER)
+        self._h = None
+        self.append(self.btn)
+
+    def show(self, text, tip=None, action=None, on=None):
+        self.text.set_text(text)
+        self.text.set_tooltip_text(tip or text)
+        self.btn.set_visible(bool(action))
+        if action:
+            self.btn.set_label(action)
+            if self._h:
+                self.btn.disconnect(self._h)
+            self._h = self.btn.connect('clicked', lambda *_: on())
+        self.set_visible(True)
+
+    def hide(self):
+        self.set_visible(False)
+
+
+class SelectionBar(Gtk.ActionBar):
+    """Thanh hành động ở đáy bảng: chỉ hiện khi có dòng được chọn; bên trái là tên mục đang chọn, bên phải là các nút."""
+
+    def __init__(self):
+        super().__init__(revealed=False)
+        box = vbox(0, valign=Gtk.Align.CENTER)
+        self.title = Gtk.Label(xalign=0, ellipsize=3, css_classes=['heading'], max_width_chars=40)
+        self.sub = Gtk.Label(xalign=0, ellipsize=1, css_classes=['dim-label', 'caption'], max_width_chars=60)
+        box.append(self.title)
+        box.append(self.sub)
+        self.pack_start(box)
+
+    def add(self, *widgets):
+        for w in reversed(widgets):
+            self.pack_end(w)
+
+    def select(self, title=None, sub=''):
+        self.set_revealed(title is not None)
+        if title is not None:
+            self.title.set_text(title)
+            self.sub.set_text(sub or '')
+            self.sub.set_visible(bool(sub))
 
 
 class Page(Adw.Bin):
     """Trang của một module. Tự bật/tắt tác vụ định kỳ theo việc có đang hiển thị hay không."""
 
+    # Điều khiển của trang đặt trên thanh tiêu đề cửa sổ (do MainWindow gắn vào khi trang hiện).
+    hdr_title = None       # widget thay cho tiêu đề (vd. ViewSwitcher); None = tên module
+    hdr_subtitle = ''
+    hdr_start = ()
+    hdr_end = ()
+
     def __init__(self, window):
         super().__init__()
         self.window = window
+        self.hdr_start, self.hdr_end = [], []
         self._timers = []
         self.connect('map', lambda *_: self.on_show())
         self.connect('unmap', lambda *_: self.on_hide())
 
     def toast(self, msg):
         self.window.toast(msg)
+
+    def set_subtitle(self, text):
+        self.hdr_subtitle = text
+        if self.window.pages.get(self.window.current) is self:
+            self.window.content_title.set_subtitle(text)
 
     def every(self, seconds, fn):
         """Gọi fn ngay và lặp lại mỗi `seconds` khi trang đang hiện."""

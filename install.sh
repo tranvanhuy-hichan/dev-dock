@@ -16,13 +16,6 @@ refresh() {
   command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t "$ICONS" 2>/dev/null || true
 }
 
-# Dọn bản cũ (bản Tauri/webview dùng id vn.makeai.devdock viết thường) để không trùng lệnh `devdock` và mục menu.
-remove_legacy() {
-  rm -f "$HOME/.local/share/applications/vn.makeai.devdock.desktop" \
-        "$ICONS/512x512/apps/vn.makeai.devdock.png" "$ICONS/128x128/apps/vn.makeai.devdock.png" "$ICONS/scalable/apps/vn.makeai.devdock.svg" \
-        "$DEST/devdock" "$DEST/devdock.new" "$DEST/clean-env.sh"
-}
-
 if [ "${1:-}" = "--uninstall" ]; then
   rm -f "$BIN" "$DESKTOP" "$ICONS/512x512/apps/$APP_ID.png" "$ICONS/scalable/apps/$APP_ID.svg"
   rm -rf "$DEST"
@@ -44,7 +37,6 @@ assert Adw.MINOR_VERSION >= 5 or Adw.MAJOR_VERSION > 1, 'libadwaita cũ'
   exit 1
 fi
 
-remove_legacy
 mkdir -p "$DEST/bin" "$DEST/data" "$(dirname "$BIN")" "$(dirname "$DESKTOP")" "$ICONS/512x512/apps" "$ICONS/scalable/apps"
 rm -rf "$DEST/devdock" "$DEST/data/icons"
 cp -r "$SRC/devdock" "$DEST/devdock"

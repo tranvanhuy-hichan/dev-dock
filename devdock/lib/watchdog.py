@@ -149,6 +149,10 @@ def set_autostart(enabled):
 # ======================================================================================
 # Bộ lấy mẫu (nhẹ: psutil, giữ đối tượng Process để cpu_percent có nghĩa)
 # ======================================================================================
+# Runner suy luận AI: nạp model nặng RAM và kéo CPU khi đang trả lời là bình thường (Ollama tự nạp/gỡ model theo yêu cầu), không báo "ngốn tài nguyên".
+INFERENCE_RUNNERS = {'llama-server', 'ollama', 'ollama_llama_server'}
+
+
 class SystemSampler:
     def __init__(self):
         self._procs = {}
@@ -263,7 +267,8 @@ class Engine:
         return bool(self.rule(name).get('enabled'))
 
     def _ignored(self, name):
-        return name.lower() in {x.lower() for x in self.config.get('ignore', [])}
+        n = name.lower()
+        return n in INFERENCE_RUNNERS or n in {x.lower() for x in self.config.get('ignore', [])}
 
     def _fire(self, key, title, body, level, now):
         """Bắn một cảnh báo nếu hết cooldown của khoá. Trả về alert hoặc None."""

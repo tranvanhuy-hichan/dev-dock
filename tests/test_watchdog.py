@@ -125,6 +125,18 @@ class HogTest(unittest.TestCase):
         e.tick(sample(procs=busy), 180)
         self.assertEqual(notes[0]['title'], 'Tiến trình ngốn CPU')
 
+    def test_inference_runners_never_flagged_by_default(self):
+        e, notes = engine()
+        big = [proc('llama-server', 3, 4 * GB, 800)]
+        for t in (0, 300, 600):
+            e.tick(sample(procs=big), t)
+        self.assertEqual((notes, e.hogs()), ([], []))
+        e2, notes2 = engine()
+        other = [proc('node', 4, 4 * GB, 800)]
+        for t in (0, 300, 600):
+            e2.tick(sample(procs=other), t)
+        self.assertTrue(notes2)
+
     def test_ignore_list_case_insensitive(self):
         e, notes = engine(ignore=['LLAMA-server'])
         big = [proc('llama-server', 3, 4 * GB, 100)]

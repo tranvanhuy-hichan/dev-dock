@@ -41,13 +41,117 @@ def matches(p, flt):
     return [True, bool(p['dirty'] or p['untracked']), p['ahead'] > 0, p['behind'] > 0, not p['git'], time.time() - p['last_ts'] > 30 * 86400][flt]
 
 
+class RootsDialog(Adw.Dialog):
+    """Nguồn project: nhiều thư mục gốc (quét các project bên trong), project lẻ nằm ở bất kỳ đâu, và độ sâu quét."""
+
+    def __init__(self, page):
+        super().__init__(title='Nguồn project', content_width=600, content_height=640)
+        self.page = page
+        st = page.window.store
+        self.roots = list(st['project_roots'] or P.default_roots())   # thư mục mặc định hiện thành mục thật để bạn thêm/bớt thoải mái
+        self.extra = list(st['project_extra'])
+        self.rows = []
+        tv = Adw.ToolbarView()
+        hdr = Adw.HeaderBar(show_end_title_buttons=False, show_start_title_buttons=False)
+        cancel = Gtk.Button(label='Huỷ')
+        cancel.connect('clicked', lambda *_: self.close())
+        save = Gtk.Button(label='Lưu và quét lại', css_classes=['suggested-action'])
+        save.connect('clicked', lambda *_: self.save())
+        hdr.pack_start(cancel)
+        hdr.pack_end(save)
+        tv.add_top_bar(hdr)
+        pg = Adw.PreferencesPage()
+        self.g_roots = Adw.PreferencesGroup(title='Thư mục gốc', description='DevDock quét các project nằm bên trong mỗi thư mục này.')
+        self.g_extra = Adw.PreferencesGroup(title='Project lẻ', description='Project nằm ngoài các thư mục trên. Thêm riêng từng cái.')
+        g_depth = Adw.PreferencesGroup(title='Cách quét')
+        self.depth = Adw.SpinRow.new_with_range(P.DEPTH_RANGE[0], P.DEPTH_RANGE[1], 1)
+        self.depth.set_title('Độ sâu tối đa')
+        self.depth.set_subtitle('Tìm project sâu bao nhiêu cấp bên dưới thư mục gốc. Quét sâu hơn thì chậm hơn.')
+        self.depth.set_value(int(st['scan_depth'] or 3))
+        self.depth.connect('notify::value', lambda *_: self.preview())
+        g_depth.add(self.depth)
+        self.found = Adw.ActionRow(title='Sẽ tìm thấy', subtitle='đang đếm…', activatable=False)
+        g_depth.add(self.found)
+        for g in (self.g_roots, self.g_extra, g_depth):
+            pg.add(g)
+        tv.set_content(pg)
+        self.set_child(tv)
+        self.render()
+
+    def render(self):
+        for g, rows in self.rows:
+            g.remove(rows)
+        self.rows = []
+        for g, items, what in ((self.g_roots, self.roots, 'root'), (self.g_extra, self.extra, 'extra')):
+            for path in items:
+                r = Adw.ActionRow(title=GLib.markup_escape_text(os.path.basename(path.rstrip('/')) or path), subtitle=GLib.markup_escape_text(path), activatable=False)
+                r.add_prefix(Gtk.Image(icon_name='folder-symbolic'))
+                rm = icon_btn('user-trash-symbolic', 'Bỏ khỏi danh sách', lambda p=path, w=what: self.remove(w, p), ['flat', 'circular'])
+                rm.set_valign(Gtk.Align.CENTER)
+                r.add_suffix(rm)
+                g.add(r)
+                self.rows.append((g, r))
+            add = Adw.ButtonRow(title='Thêm thư mục gốc…' if what == 'root' else 'Thêm project…', start_icon_name='list-add-symbolic')
+            add.connect('activated', lambda *_a, w=what: self.add(w))
+            g.add(add)
+            self.rows.append((g, add))
+        self.preview()
+
+    def remove(self, what, path):
+        (self.roots if what == 'root' else self.extra).remove(path)
+        self.render()
+
+    def add(self, what):
+        dlg = Gtk.FileDialog(title='Chọn thư mục chứa các project' if what == 'root' else 'Chọn thư mục của project')
+
+        def done(d, res):
+            try:
+                files = d.select_multiple_folders_finish(res) if what == 'root' else [d.select_folder_finish(res)]
+            except GLib.Error:
+                return
+            lst = self.roots if what == 'root' else self.extra
+            for f in (files if isinstance(files, list) else [files.get_item(i) for i in range(files.get_n_items())]):
+                path = os.path.realpath(f.get_path())
+                if path == '/':
+                    self.page.toast('Không quét cả ổ đĩa gốc "/". Hãy chọn một thư mục cụ thể.')
+                elif path not in lst:
+                    lst.append(path)
+            self.render()
+        (dlg.select_multiple_folders if what == 'root' else dlg.select_folder)(self.page.get_root(), None, done)
+
+    def preview(self):
+        """Đếm số project sẽ tìm thấy với cấu hình đang chỉnh (chạy nền)."""
+        roots, extra, depth = list(self.roots), list(self.extra), int(self.depth.get_value())
+        self._pv = getattr(self, '_pv', 0) + 1
+        n = self._pv
+
+        def work():
+            return len(P.find_projects(roots + [e for e in extra if e not in roots], depth, extra))
+
+        def done(res, err):
+            if n == self._pv:
+                self.found.set_subtitle(f'{res} project' if res is not None else (err or ''))
+        bg(work, done)
+
+    def save(self):
+        st = self.page.window.store
+        st['project_roots'] = list(self.roots)
+        st['project_extra'] = list(self.extra)
+        st['scan_depth'] = int(self.depth.get_value())
+        st.save()
+        self.page.items = []
+        self.page.refresh()
+        self.close()
+        self.page.toast('Đã lưu nguồn project')
+
+
 class ProjectsPage(Page):
     def __init__(self, window):
         super().__init__(window)
         self.items, self.gen, self.busy = [], 0, False
         self.flt = 0
         # --- thanh tiêu đề: làm mới + đổi thư mục gốc
-        self.roots_btn = icon_btn('folder-open-symbolic', 'Đổi thư mục gốc để quét', self.pick_root)
+        self.roots_btn = icon_btn('folder-open-symbolic', 'Nguồn project: thư mục gốc, project lẻ, độ sâu quét', self.pick_root)
         self.hdr_end = [icon_btn('view-refresh-symbolic', 'Quét lại', self.refresh), self.roots_btn]
 
         root = content_box()
@@ -100,14 +204,14 @@ class ProjectsPage(Page):
 
     # ---- dữ liệu
     def roots(self):
-        return self.window.store['project_roots'] or P.default_roots()
+        return P.scan_roots(self.window.store)
 
     def refresh(self, quiet=False):
         if self.busy:
             return
         self.busy = True
         roots = self.roots()
-        self.roots_btn.set_tooltip_text('Đang quét: ' + ', '.join(roots) + '\nBấm để đổi thư mục gốc')
+        self.roots_btn.set_tooltip_text('Đang quét: ' + ', '.join(roots) + '\nBấm để thêm/bớt thư mục gốc hoặc thêm project lẻ')
         self.set_subtitle(', '.join(self.rel_root(r) for r in roots))
         if not self.items and not quiet:
             self.stack.set_visible_child_name('status')
@@ -181,18 +285,7 @@ class ProjectsPage(Page):
                 b.set_sensitive((k != 'fetch' or p['git']) and (k != 'clean' or bool(p.get('build'))))
 
     def pick_root(self):
-        dlg = Gtk.FileDialog(title='Chọn thư mục chứa các project')
-
-        def done(d, res):
-            try:
-                f = d.select_folder_finish(res)
-            except GLib.Error:
-                return
-            self.window.store['project_roots'] = [f.get_path()]
-            self.window.store.save()
-            self.items = []
-            self.refresh()
-        dlg.select_folder(self.get_root(), None, done)
+        RootsDialog(self).present(self.get_root())
 
     def show_tool(self, name):  # chế độ chụp ảnh kiểm thử
         if name == 'select' and self.table.sorted.get_n_items():

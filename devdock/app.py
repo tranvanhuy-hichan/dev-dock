@@ -16,34 +16,41 @@ from .ui import CSS, label  # noqa: E402
 
 ICON_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'icons')
 
-# (id, tên, icon, lớp trang)
+# Sidebar: mục đơn hoặc mục gộp ('hub' = nhiều trang liên quan chuyển qua tab ở thanh tiêu đề, xem TOOLS).
 MODULES = [
-    # (id, tên, icon, lớp trang, nhóm trong sidebar)
+    # (id, tên, icon, lớp trang | 'hub', nhóm)
     ('dashboard', 'Tổng quan', 'go-home-symbolic', 'devdock.pages.dashboard:DashboardPage', 'Trang chủ'),
-    ('projects', 'Projects', 'folder-symbolic', 'devdock.pages.projects:ProjectsPage', 'Project'),
-    ('git', 'Git', 'media-playlist-repeat-symbolic', 'devdock.pages.gitpage:GitPage', 'Project'),
-    ('services', 'Dev Services', 'media-playback-start-symbolic', 'devdock.pages.services:ServicesPage', 'Project'),
-    ('secrets', 'Secrets', 'channel-secure-symbolic', 'devdock.pages.secrets:SecretsPage', 'Project'),
-    ('env', 'Env Manager', 'dialog-password-symbolic', 'devdock.pages.envs:EnvPage', 'Project'),
-    ('deps', 'Dependency', 'software-update-available-symbolic', 'devdock.pages.deps:DepsPage', 'Project'),
-    ('docker', 'DockerDesk', 'package-x-generic-symbolic', 'devdock.pages.docker:DockerPage', 'Chạy & dữ liệu'),
-    ('ports', 'Port Manager', 'network-transmit-receive-symbolic', 'devdock.pages.ports:PortsPage', 'Chạy & dữ liệu'),
-    ('database', 'Database', 'drive-multidisk-symbolic', 'devdock.pages.database:DatabasePage', 'Chạy & dữ liệu'),
-    ('api', 'API Tester', 'send-to-symbolic', 'devdock.pages.apitester:ApiPage', 'Chạy & dữ liệu'),
-    ('logs', 'Log Viewer', 'utilities-terminal-symbolic', 'devdock.pages.logs:LogsPage', 'Chạy & dữ liệu'),
-    ('sysmon', 'SysMonitor', 'utilities-system-monitor-symbolic', 'devdock.pages.sysmon:SysMonitorPage', 'Hệ thống'),
-    ('watch', 'Giám sát', 'dialog-warning-symbolic', 'devdock.pages.watchdog:WatchPage', 'Hệ thống'),
-    ('cleaner', 'DiskCleaner', 'edit-clear-all-symbolic', 'devdock.pages.cleaner:CleanerPage', 'Hệ thống'),
+    ('project', 'Dự án', 'folder-symbolic', 'hub', 'Làm việc'),
+    ('run', 'Dev Services', 'media-playback-start-symbolic', 'hub', 'Làm việc'),
+    ('docker', 'DockerDesk', 'package-x-generic-symbolic', 'devdock.pages.docker:DockerPage', 'Hạ tầng'),
+    ('data', 'Dữ liệu & API', 'drive-multidisk-symbolic', 'hub', 'Hạ tầng'),
+    ('system', 'Hệ thống', 'utilities-system-monitor-symbolic', 'hub', 'Hệ thống'),
     ('ollama', 'Ollama AI', 'chat-bubble-text-symbolic', 'devdock.pages.ollama:OllamaPage', 'AI'),
 ]
+# Trang con của từng mục gộp: (id, tiêu đề tab, icon, lớp trang). Id con vẫn dùng được với select_module / window.pages.
+TOOLS = {
+    'project': [('projects', 'Projects', 'folder-symbolic', 'devdock.pages.projects:ProjectsPage'),
+                ('git', 'Git', 'media-playlist-repeat-symbolic', 'devdock.pages.gitpage:GitPage'),
+                ('deps', 'Dependency', 'software-update-available-symbolic', 'devdock.pages.deps:DepsPage'),
+                ('secrets', 'Secrets', 'channel-secure-symbolic', 'devdock.pages.secrets:SecretsPage'),
+                ('env', 'Env', 'dialog-password-symbolic', 'devdock.pages.envs:EnvPage')],
+    'run': [('services', 'Services', 'media-playback-start-symbolic', 'devdock.pages.services:ServicesPage'),
+            ('ports', 'Cổng mạng', 'network-transmit-receive-symbolic', 'devdock.pages.ports:PortsPage'),
+            ('logs', 'Log', 'utilities-terminal-symbolic', 'devdock.pages.logs:LogsPage')],
+    'data': [('database', 'Database', 'drive-multidisk-symbolic', 'devdock.pages.database:DatabasePage'),
+             ('api', 'API Tester', 'send-to-symbolic', 'devdock.pages.apitester:ApiPage')],
+    'system': [('sysmon', 'Tài nguyên', 'utilities-system-monitor-symbolic', 'devdock.pages.sysmon:SysMonitorPage'),
+               ('perf', 'Hiệu năng', 'speedometer-symbolic', 'devdock.pages.perf:PerfPage'),
+               ('memory', 'Bộ nhớ', 'media-flash-symbolic', 'devdock.pages.memory:MemoryPage'),
+               ('watch', 'Cảnh báo', 'dialog-warning-symbolic', 'devdock.pages.watchdog:WatchPage'),
+               ('cleaner', 'Dọn đĩa', 'edit-clear-all-symbolic', 'devdock.pages.cleaner:CleanerPage')],
+}
+TOOL_HUB = {tid: hub for hub, tools in TOOLS.items() for tid, *_r in tools}
+TOOL_NAME = {tid: title for tools in TOOLS.values() for tid, title, *_r in tools}
 
 
 # màu dịu cho từng module (tên lớp CSS c-<màu>)
-MODULE_COLOR = {
-    'dashboard': 'blue', 'projects': 'amber', 'git': 'orange', 'services': 'green', 'env': 'rose', 'deps': 'teal',
-    'docker': 'sky', 'database': 'indigo', 'api': 'purple', 'logs': 'slate', 'sysmon': 'cyan', 'watch': 'red',
-    'cleaner': 'lime', 'ollama': 'pink', 'secrets': 'red', 'ports': 'teal',
-}
+MODULE_COLOR = {'dashboard': 'blue', 'project': 'amber', 'run': 'green', 'docker': 'sky', 'data': 'indigo', 'system': 'cyan', 'ollama': 'pink'}
 
 
 class Palette(Adw.Dialog):
@@ -112,8 +119,6 @@ class MainWindow(Adw.ApplicationWindow):
         split = Adw.NavigationSplitView(min_sidebar_width=200, max_sidebar_width=240, sidebar_width_fraction=0.2)
         # --- sidebar
         self.nav = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, css_classes=['navigation-sidebar'])
-        self.nav.set_header_func(lambda row, before: row.set_header(label(row.group, ['dim-label', 'caption'], margin_top=10, margin_bottom=2, margin_start=12)
-                                                                      if before is None or before.group != row.group else None))
         for idx, (mid, name, icon, _cls, group) in enumerate(MODULES, 1):
             row = Gtk.ListBoxRow()
             row.mid, row.group = mid, group
@@ -215,20 +220,33 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ---- điều hướng
     def select_module(self, mid):
+        """Mở một mục sidebar, hoặc một trang con của mục gộp (vd. 'git' → mục Dự án, tab Git)."""
+        hub = TOOL_HUB.get(mid)
         for r in self.nav_rows():
-            if r.mid == mid:
+            if r.mid == (hub or mid):
                 self.nav.select_row(r)
+                if hub:
+                    self.pages[hub].show_tab(mid)
                 return
+
+    def is_active(self, page):
+        """Trang này (hoặc tab con của mục gộp) đang hiện không."""
+        cur = self.pages.get(self.current)
+        return cur is page or getattr(cur, 'active_child', None) is page
 
     def show_module(self, mid):
         if mid not in self.pages:
             spec = next(m for m in MODULES if m[0] == mid)
-            mod, cls = spec[3].split(':')
-            try:
-                page = getattr(importlib.import_module(mod), cls)(self)
-            except Exception as e:  # noqa: BLE001
-                traceback.print_exc()
-                page = Adw.StatusPage(icon_name='dialog-error-symbolic', title=f'Không mở được {spec[1]}', description=str(e))
+            if spec[3] == 'hub':
+                from .hub import Hub
+                page = Hub(self, TOOLS[mid])
+            else:
+                mod, cls = spec[3].split(':')
+                try:
+                    page = getattr(importlib.import_module(mod), cls)(self)
+                except Exception as e:  # noqa: BLE001
+                    traceback.print_exc()
+                    page = Adw.StatusPage(icon_name='dialog-error-symbolic', title=f'Không mở được {spec[1]}', description=str(e))
             self.pages[mid] = page
             self.stack.add_named(page, mid)
         self.stack.set_visible_child_name(mid)
@@ -277,6 +295,9 @@ class MainWindow(Adw.ApplicationWindow):
 
     def open_palette(self):
         items = [{'label': f'Mở {m[1]}', 'hint': f'Ctrl+{i}' if i <= 9 else '', 'run': lambda mid=m[0]: self.select_module(mid)} for i, m in enumerate(MODULES, 1)]
+        for hub, tools in TOOLS.items():
+            hub_name = next(m[1] for m in MODULES if m[0] == hub)
+            items += [{'label': f'Mở {title}', 'hint': hub_name, 'run': lambda tid=tid: self.select_module(tid)} for tid, title, *_r in tools]
         items += [{'label': 'Giao diện sáng', 'run': lambda: self.set_theme('light', True)}, {'label': 'Giao diện tối', 'run': lambda: self.set_theme('dark', True)},
                   {'label': 'Giao diện theo hệ thống', 'run': lambda: self.set_theme('system', True)}]
         Palette(items).present(self)

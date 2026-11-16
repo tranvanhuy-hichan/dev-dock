@@ -97,7 +97,7 @@ class SecretsPage(Page):
 
     # ---- quét
     def repos(self):
-        roots = self.window.store['project_roots'] or P.default_roots()
+        roots = P.scan_roots(self.window.store)
         return [p for p in P.find_projects(roots) if os.path.isdir(os.path.join(p, '.git'))]
 
     def scan(self):

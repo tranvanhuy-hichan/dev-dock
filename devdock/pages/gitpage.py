@@ -257,7 +257,7 @@ class PushAllDialog(Adw.Dialog):
         self.stack.add_named(self.box, 'list')
         tv.set_content(self.stack)
         self.set_child(tv)
-        roots = page.window.store['project_roots'] or P.default_roots()
+        roots = P.scan_roots(page.window.store)
         bg(lambda: [p for p in P.scan(roots) if p['git'] and p['ahead'] > 0], self.loaded)
 
     def loaded(self, repos, err):
@@ -371,7 +371,7 @@ class GitPage(Page):
 
     # ================= dữ liệu repo =================
     def roots(self):
-        return self.window.store['project_roots'] or P.default_roots()
+        return P.scan_roots(self.window.store)
 
     def once(self, key, fn, done):
         if key in self.busy:

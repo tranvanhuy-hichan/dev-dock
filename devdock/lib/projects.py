@@ -20,8 +20,32 @@ def default_roots():
     return [p] if os.path.isdir(p) else [os.path.expanduser('~')]
 
 
-def find_projects(roots, max_depth=3):
-    """Danh sách đường dẫn project: thư mục có .git hoặc file đánh dấu (package.json, Cargo.toml...). Không đi sâu vào bên trong project."""
+# Cấu hình quét do người dùng chọn (đặt qua configure() / scan_roots(store)); các bộ quét khác (env, compose, discover) dùng chung độ sâu này.
+EXTRA = set()      # project lẻ: đường dẫn (realpath) luôn được coi là project dù nằm ngoài các thư mục gốc
+MAX_DEPTH = 3
+DEPTH_RANGE = (1, 6)
+
+
+def configure(extras=(), depth=3):
+    global EXTRA, MAX_DEPTH
+    EXTRA = {os.path.realpath(os.path.expanduser(e)) for e in extras if e}
+    MAX_DEPTH = max(DEPTH_RANGE[0], min(DEPTH_RANGE[1], int(depth or 3)))
+
+
+def scan_roots(store):
+    """Danh sách thư mục để quét theo cấu hình: thư mục gốc (mặc định ~/Projects) + project lẻ còn tồn tại. Cũng áp cấu hình độ sâu/project lẻ."""
+    roots = list(store['project_roots'] or default_roots())
+    extras = [e for e in store.get('project_extra', []) if os.path.isdir(os.path.expanduser(e))]
+    configure(extras, store.get('scan_depth', 3))
+    real = {os.path.realpath(os.path.expanduser(r)) for r in roots}
+    return roots + [e for e in extras if os.path.realpath(os.path.expanduser(e)) not in real]
+
+
+def find_projects(roots, max_depth=None, extras=None):
+    """Danh sách đường dẫn project: thư mục có .git hoặc file đánh dấu (package.json, Cargo.toml...). Không đi sâu vào bên trong project.
+    Project lẻ (EXTRA) luôn được liệt kê. Độ sâu mặc định theo cấu hình (MAX_DEPTH)."""
+    max_depth = MAX_DEPTH if max_depth is None else max_depth
+    extra = EXTRA if extras is None else {os.path.realpath(os.path.expanduser(e)) for e in extras}
     found, seen = [], set()
 
     def walk(d, depth):
@@ -45,6 +69,11 @@ def find_projects(roots, max_depth=3):
                 walk(p, depth + 1)
     for r in roots:
         r = os.path.realpath(os.path.expanduser(r))
+        if r in extra:
+            if os.path.isdir(r) and r not in seen:
+                seen.add(r)
+                found.append(r)
+            continue
         if os.path.isdir(r):
             walk(r, 0)
             # chính thư mục gốc cũng có thể là project

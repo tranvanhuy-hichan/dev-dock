@@ -135,8 +135,10 @@ def exec_argv(cid):
     return ['docker', 'exec', '-it', cid, 'sh', '-c', 'command -v bash >/dev/null 2>&1 && exec bash || exec sh']
 
 
-def find_compose(roots, max_depth=3):
+def find_compose(roots, max_depth=None):
     """Tìm file compose trong các thư mục gốc (không đi vào node_modules, .git...)."""
+    from . import projects as P
+    max_depth = P.MAX_DEPTH if max_depth is None else max_depth
     names = {'docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'}
     skip = {'node_modules', '.git', '.venv', 'venv', 'target', 'dist', 'build', '__pycache__', 'snap'}
     out = []

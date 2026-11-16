@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -16,6 +17,8 @@ HISTORY_MAX = 200
 RULE_TITLES = {
     'ram_low': 'RAM khả dụng thấp', 'swap_high': 'Swap gần đầy', 'disk_low': 'Ổ đĩa sắp đầy', 'hog_mem': 'Tiến trình ngốn RAM', 'hog_cpu': 'Tiến trình ngốn CPU',
     'service_died': 'Dev service dừng bất thường', 'docker_died': 'Container Docker lỗi', 'port_conflict': 'Cổng của dev service bị chiếm',
+    'mem_leak': 'Có thể rò rỉ bộ nhớ', 'oom_kill': 'Hệ thống buộc dừng tiến trình vì hết RAM', 'load_high': 'Tải CPU của máy quá cao', 'temp_high': 'Nhiệt độ quá cao',
+    'battery_low': 'Pin yếu', 'zombies': 'Nhiều tiến trình zombie',
 }
 DEFAULTS = {
     'rules': {
@@ -27,6 +30,12 @@ DEFAULTS = {
         'service_died': {'enabled': True},
         'docker_died': {'enabled': True},
         'port_conflict': {'enabled': True},
+        'mem_leak': {'enabled': True, 'mb': 300, 'minutes': 10},
+        'oom_kill': {'enabled': True},
+        'load_high': {'enabled': True, 'x': 1.5, 'minutes': 3},
+        'temp_high': {'enabled': True, 'celsius': 90, 'minutes': 1},
+        'battery_low': {'enabled': True, 'pct': 15},
+        'zombies': {'enabled': True, 'count': 5, 'minutes': 5},
     },
     'cooldown_min': 30, 'ignore': [], 'background': False, 'interval': 10,
 }
@@ -181,6 +190,7 @@ class SystemSampler:
 
     def _processes(self):
         out, alive = [], set()
+        self.zombies = 0
         for p in psutil.process_iter():
             try:
                 pid = p.pid
@@ -191,16 +201,70 @@ class SystemSampler:
                     if rss < 32 * 1024 * 1024 and cpu < 5:
                         continue  # không đáng theo dõi: giữ danh sách nhỏ
                     out.append({'pid': pid, 'name': q.name(), 'rss': rss, 'cpu': cpu, 'created': q.create_time()})
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            except psutil.ZombieProcess:
+                self.zombies += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         for pid in set(self._procs) - alive:
             self._procs.pop(pid, None)
         return out
 
+    @staticmethod
+    def _oom_kills():
+        try:
+            with open('/proc/vmstat', encoding='ascii') as f:
+                for line in f:
+                    if line.startswith('oom_kill '):
+                        return int(line.split()[1])
+        except (OSError, ValueError):
+            pass
+        return None
+
+    def _temperature(self):
+        """(°C cao nhất, tên cảm biến) của CPU/GPU, hoặc (None, '')."""
+        best = (None, '')
+        try:
+            for name, entries in (psutil.sensors_temperatures() or {}).items():
+                if name in ('coretemp', 'k10temp', 'zenpower', 'cpu_thermal', 'acpitz'):
+                    for e in entries:
+                        if e.current and (best[0] is None or e.current > best[0]):
+                            best = (e.current, 'CPU')
+        except (AttributeError, OSError):
+            pass
+        gpu = self._gpu_temp()
+        if gpu is not None and (best[0] is None or gpu > best[0]):
+            best = (gpu, 'GPU')
+        return best
+
+    def _gpu_temp(self):
+        now = time.time()
+        if now - getattr(self, '_gpu_t', 0) < 30:
+            return getattr(self, '_gpu_v', None)
+        self._gpu_t, self._gpu_v = now, None
+        if shutil.which('nvidia-smi'):
+            try:
+                r = subprocess.run(['nvidia-smi', '--query-gpu=temperature.gpu', '--format=csv,noheader,nounits'], capture_output=True, text=True, timeout=4)
+                if r.returncode == 0:
+                    self._gpu_v = max(float(x) for x in r.stdout.split() if x.replace('.', '', 1).isdigit())
+            except (OSError, subprocess.TimeoutExpired, ValueError):
+                pass
+        return self._gpu_v
+
     def sample(self):
         vm, sw = psutil.virtual_memory(), psutil.swap_memory()
-        return {'t': time.time(), 'mem_total': vm.total, 'mem_avail': vm.available, 'mem_avail_pct': vm.available / vm.total * 100 if vm.total else 100.0,
-                'swap_total': sw.total, 'swap_used': sw.used, 'swap_pct': sw.percent if sw.total else 0.0, 'disks': self._disks(), 'procs': self._processes()}
+        procs = self._processes()
+        try:
+            bat = psutil.sensors_battery()
+        except (AttributeError, OSError):
+            bat = None
+        temp, temp_name = self._temperature()
+        try:
+            load1 = os.getloadavg()[0]
+        except OSError:
+            load1 = 0.0
+        return {'oom_kills': self._oom_kills(), 'load1': load1, 'cores': psutil.cpu_count() or 1, 'zombies': self.zombies, 'temp': temp, 'temp_name': temp_name,
+                'battery': {'pct': bat.percent, 'plugged': bool(bat.power_plugged)} if bat else None, 't': time.time(), 'mem_total': vm.total, 'mem_avail': vm.available, 'mem_avail_pct': vm.available / vm.total * 100 if vm.total else 100.0,
+                'swap_total': sw.total, 'swap_used': sw.used, 'swap_pct': sw.percent if sw.total else 0.0, 'disks': self._disks(), 'procs': procs}
 
 
 def service_samples(manager, services):
@@ -257,6 +321,7 @@ class Engine:
         self.since, self.last, self.hog_info = {}, {}, {}
         self.prev_containers, self.reported_runs, self.cur_containers = {}, set(), None
         self.last_sample = None
+        self.rss_hist, self.prev_oom = {}, None
         self.unread = 0
 
     # ---- tiện ích
@@ -332,6 +397,7 @@ class Engine:
                 text = (f"{p['name']} (PID {p['pid']}) đang dùng {human(p['rss'])} RAM" if kind == 'ram' else f"{p['name']} (PID {p['pid']}) đang chiếm {p['cpu']:.0f}% CPU")
                 conds.append((key, 'Tiến trình ngốn RAM' if kind == 'ram' else 'Tiến trình ngốn CPU', text + f" liên tục từ {int(need // 60)} phút trước. Có thể là ứng dụng chạy nền bị lỗi.", 'warn', need))
                 hogs[key] = {'key': key, 'kind': kind, 'pid': p['pid'], 'name': p['name'], 'rss': p['rss'], 'cpu': p['cpu'], 'need': need}
+        self._system_conds(s, procs, conds, now)
         # dev service: cổng bị process khác chiếm
         svcs = s.get('services') or []
         owners = s.get('port_owners') or {}
@@ -370,7 +436,60 @@ class Engine:
                 del self.since[k]
         self.hog_info = hogs
         fired += self._events(svcs, conts, now)
+        fired += self._oom(s, procs, now)
         return fired
+
+    # ---- các điều kiện mới: rò rỉ, tải, nhiệt độ, pin, zombie
+    def _system_conds(self, s, procs, conds, now):
+        if self.on('mem_leak'):
+            r = self.rule('mem_leak')
+            win, need = r['minutes'] * 60, r['mb'] * 1024 * 1024
+            seen = set()
+            for p in procs:
+                if self._ignored(p['name']):
+                    continue
+                seen.add(p['pid'])
+                h = self.rss_hist.setdefault(p['pid'], [])
+                h.append((now, p['rss']))
+                while h and now - h[0][0] > win * 1.5:
+                    h.pop(0)
+                base = next(((t, v) for t, v in reversed(h) if now - t >= win), None)
+                if base is None or now - p.get('created', now) < win or p['rss'] - base[1] < need:
+                    continue
+                span = [v for t, v in h if t >= base[0]]
+                steps = list(zip(span, span[1:]))
+                if not steps or sum(1 for a, b in steps if b >= a * 0.97) / len(steps) < 0.8:
+                    continue  # lên xuống thất thường: không phải rò rỉ đều
+                conds.append((f"leak:{p['pid']}:{p['name']}", 'Có thể rò rỉ bộ nhớ',
+                              f"{p['name']} (PID {p['pid']}) tăng từ {human(base[1])} lên {human(p['rss'])} trong {int((now - base[0]) // 60)} phút mà không giảm lại. Nếu nó cứ tăng, hãy khởi động lại ứng dụng đó.", 'warn', 0))
+            for pid in set(self.rss_hist) - seen:
+                del self.rss_hist[pid]
+        if self.on('load_high') and s.get('load1') is not None and s.get('cores'):
+            r = self.rule('load_high')
+            if s['load1'] > s['cores'] * r['x']:
+                conds.append(('load_high', 'Tải CPU của máy quá cao', f"Tải trung bình {s['load1']:.1f} trên {s['cores']} nhân (gấp {s['load1'] / s['cores']:.1f} lần). Nhiều CPU nhất: {self._top(procs, key='cpu')}", 'warn', r['minutes'] * 60))
+        if self.on('temp_high') and s.get('temp') is not None:
+            r = self.rule('temp_high')
+            if s['temp'] >= r['celsius']:
+                conds.append(('temp_high', 'Nhiệt độ quá cao', f"{s.get('temp_name') or 'Máy'} đang {s['temp']:.0f}°C (ngưỡng {r['celsius']:.0f}°C). Kiểm tra quạt/tản nhiệt, giảm tải hoặc đặt máy ở nơi thoáng.",
+                              'error' if s['temp'] >= r['celsius'] + 5 else 'warn', r['minutes'] * 60))
+        bat = s.get('battery')
+        if self.on('battery_low') and bat and not bat['plugged'] and bat['pct'] <= self.rule('battery_low')['pct']:
+            conds.append(('battery_low', 'Pin yếu', f"Pin còn {bat['pct']:.0f}% và đang không cắm sạc. Lưu việc đang làm và cắm sạc.", 'error' if bat['pct'] <= 5 else 'warn', 0))
+        if self.on('zombies') and (s.get('zombies') or 0) >= self.rule('zombies')['count']:
+            r = self.rule('zombies')
+            conds.append(('zombies', 'Nhiều tiến trình zombie', f"Có {s['zombies']} tiến trình zombie (đã thoát nhưng tiến trình cha chưa dọn). Thường do ứng dụng cha lỗi; khởi động lại ứng dụng đó sẽ dọn sạch.", 'warn', r['minutes'] * 60))
+
+    def _oom(self, s, procs, now):
+        """Kernel tăng bộ đếm oom_kill = vừa buộc dừng một tiến trình vì hết RAM (đáng báo mỗi lần, không dùng cooldown theo khoá chung)."""
+        n = s.get('oom_kills')
+        if n is None:
+            return []
+        prev, self.prev_oom = self.prev_oom, n
+        if prev is None or n <= prev or not self.on('oom_kill'):
+            return []
+        a = self._fire(f'oom:{n}', 'Hệ thống buộc dừng tiến trình vì hết RAM', f"Kernel vừa dừng {n - prev} tiến trình do thiếu bộ nhớ (OOM). Đang dùng nhiều RAM nhất: {self._top(procs)}. Cân nhắc đóng bớt ứng dụng hoặc tăng swap.", 'error', now)
+        return [a] if a else []
 
     # ---- sự kiện (chuyển trạng thái)
     def _events(self, svcs, conts, now):

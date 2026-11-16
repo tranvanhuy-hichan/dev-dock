@@ -234,7 +234,7 @@ class DepsPage(Page):
         if self.busy:
             return
         self.busy = True
-        roots = self.window.store['project_roots'] or P.default_roots()
+        roots = P.scan_roots(self.window.store)
         if not self.targets and not quiet:
             self.stack.set_visible_child_name('status')
 

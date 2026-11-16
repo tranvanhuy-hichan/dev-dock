@@ -55,6 +55,21 @@ textview.mono { font-family: monospace; font-size: 11pt; }
 .gauge-card { border-radius: 16px; padding: 14px 16px; }
 .section-title { font-weight: 700; font-size: 12pt; }
 .nav-ico { border-radius: 8px; padding: 5px; min-width: 18px; min-height: 18px; }
+.c-blue { background: alpha(#60a5fa, .20); color: #60a5fa; }
+.c-amber { background: alpha(#fbbf24, .20); color: #fbbf24; }
+.c-orange { background: alpha(#fb923c, .20); color: #fb923c; }
+.c-green { background: alpha(#34d399, .20); color: #34d399; }
+.c-rose { background: alpha(#fb7185, .20); color: #fb7185; }
+.c-teal { background: alpha(#2dd4bf, .20); color: #2dd4bf; }
+.c-sky { background: alpha(#38bdf8, .20); color: #38bdf8; }
+.c-indigo { background: alpha(#818cf8, .20); color: #818cf8; }
+.c-purple { background: alpha(#c084fc, .20); color: #c084fc; }
+.c-slate { background: alpha(#94a3b8, .20); color: #94a3b8; }
+.c-cyan { background: alpha(#22d3ee, .20); color: #22d3ee; }
+.c-red { background: alpha(#f87171, .20); color: #f87171; }
+.c-lime { background: alpha(#a3e635, .20); color: #a3e635; }
+.c-pink { background: alpha(#f472b6, .20); color: #f472b6; }
+.c-violet { background: alpha(#a78bfa, .20); color: #a78bfa; }
 
 
 
@@ -469,7 +484,7 @@ class Page(Adw.Bin):
 
     def set_subtitle(self, text):
         self.hdr_subtitle = text
-        if self.window.pages.get(self.window.current) is self:
+        if self.window.is_active(self) and self.window.pages.get(self.window.current) is self:
             self.window.content_title.set_subtitle(text)
 
     def every(self, seconds, fn):

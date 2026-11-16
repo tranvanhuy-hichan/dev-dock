@@ -26,7 +26,7 @@ def other_devdock_running():
 
 def add_services(store, only_ready=True, dry_run=False, out=print):
     """Quét project và thêm dev server chưa có vào store. Trả về số mục đã thêm."""
-    roots = store['project_roots'] or P.default_roots()
+    roots = P.scan_roots(store)
     cands = DC.discover_roots(roots)
     new = [c for c in cands if not DC.already_added(c, store['services']) and (c['default'] and c['ready'] if only_ready else True)]
     skipped = [c for c in cands if c not in new and not DC.already_added(c, store['services'])]

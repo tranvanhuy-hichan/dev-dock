@@ -25,7 +25,7 @@ class AttentionTest(unittest.TestCase):
 
     def test_memory_swap_disk_levels(self):
         a = D.attention(sysd(ram=95))
-        self.assertEqual((a[0]['level'], a[0]['module']), ('bad', 'sysmon'))
+        self.assertEqual((a[0]['level'], a[0]['module']), ('bad', 'memory'))
         self.assertEqual(D.attention(sysd(ram=85))[0]['level'], 'warn')
         self.assertEqual(D.attention(sysd(ram=79)), [])
         self.assertIn('Swap', D.attention(sysd(swap=85))[0]['title'])
@@ -60,6 +60,13 @@ class AttentionTest(unittest.TestCase):
         a = D.attention(conflicts=c)
         self.assertEqual((a[0]['level'], a[0]['module'], a[0]['title']), ('warn', 'ports', '1 dev service bị trùng cổng'))
         self.assertEqual(D.attention(conflicts=[c[1]]), [])
+
+    def test_cpu_temperature(self):
+        self.assertEqual(D.attention(cpu_temp=80), [])
+        self.assertEqual(D.attention(cpu_temp=None), [])
+        a = D.attention(cpu_temp=92)
+        self.assertEqual((a[0]['level'], a[0]['module']), ('warn', 'perf'))
+        self.assertEqual(D.attention(cpu_temp=97)[0]['level'], 'bad')
 
     def test_docker(self):
         self.assertIn('Docker chưa chạy', D.attention(docker={'available': False, 'containers': []})[0]['title'])

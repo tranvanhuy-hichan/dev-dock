@@ -162,7 +162,7 @@ class DiscoverDialog(Adw.Dialog):
         self.stack.add_named(body, 'list')
         tv.set_content(self.stack)
         self.set_child(tv)
-        roots = page.window.store['project_roots'] or P.default_roots()
+        roots = P.scan_roots(page.window.store)
         bg(lambda: DC.discover_roots(roots), self.loaded)
 
     def loaded(self, cands, err):

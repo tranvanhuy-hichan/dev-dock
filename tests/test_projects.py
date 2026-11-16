@@ -75,3 +75,59 @@ class RealRepoTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ScanRootsTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.a, self.b = tempfile.mkdtemp(), tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.a, 'x', '.git'))
+        os.makedirs(os.path.join(self.a, 'deep', 'l2', 'l3', 'l4', 'p'))
+        open(os.path.join(self.a, 'deep', 'l2', 'l3', 'l4', 'p', 'package.json'), 'w').write('{}')
+        os.makedirs(os.path.join(self.b, 'plain'))   # thư mục thường, không có dấu hiệu project
+        os.makedirs(os.path.join(self.b, 'proj', '.git'))
+        P.configure([], 3)
+
+    def tearDown(self):
+        P.configure([], 3)
+
+    def names(self, paths):
+        return sorted(os.path.basename(p) for p in paths)
+
+    def test_multiple_roots(self):
+        self.assertEqual(self.names(P.find_projects([self.a, self.b])), ['proj', 'x'])
+
+    def test_depth_setting(self):
+        self.assertEqual(self.names(P.find_projects([self.a], 3)), ['x'])
+        self.assertEqual(self.names(P.find_projects([self.a], 5)), ['p', 'x'])
+        P.configure([], 5)
+        self.assertEqual(self.names(P.find_projects([self.a])), ['p', 'x'])
+        P.configure([], 99)
+        self.assertEqual(P.MAX_DEPTH, 6)   # kẹp trong khoảng cho phép
+        P.configure([], 0)
+        self.assertEqual(P.MAX_DEPTH, 3)
+
+    def test_extra_project_listed_even_without_markers_and_deduped(self):
+        plain = os.path.join(self.b, 'plain')
+        self.assertEqual(self.names(P.find_projects([self.a], 3, [plain])), ['x'])      # chưa là root nên chưa thấy
+        self.assertEqual(self.names(P.find_projects([self.a, plain], 3, [plain])), ['plain', 'x'])
+        x = os.path.join(self.a, 'x')
+        self.assertEqual(self.names(P.find_projects([self.a, x], 3, [x])), ['x'])        # không trùng lặp
+
+    def test_scan_roots_from_store(self):
+        plain = os.path.join(self.b, 'plain')
+        store = {'project_roots': [self.a], 'project_extra': [plain, '/nonexistent/zzz'], 'scan_depth': 3}
+        roots = P.scan_roots(store)
+        self.assertEqual(roots, [self.a, plain])                                          # project lẻ không tồn tại bị bỏ qua
+        self.assertEqual(self.names(P.find_projects(roots)), ['plain', 'x'])
+        store['project_roots'] = []
+        self.assertEqual(P.scan_roots({'project_roots': [], 'project_extra': [], 'scan_depth': 3})[0], P.default_roots()[0])
+
+    def test_other_walkers_follow_depth(self):
+        from devdock.lib import envfiles as E
+        deep = os.path.join(self.a, 'deep', 'l2', 'l3', 'l4', 'l5')
+        os.makedirs(deep)
+        open(os.path.join(deep, '.env'), 'w').write('A=1\n')
+        self.assertEqual(E.find_env_files([self.a]), [])          # sâu 5 > 3+1
+        P.configure([], 5)
+        self.assertEqual(len(E.find_env_files([self.a])), 1)

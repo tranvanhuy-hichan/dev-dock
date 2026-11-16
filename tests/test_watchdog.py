@@ -14,8 +14,8 @@ from devdock.lib.services import ServiceManager, new_service  # noqa: E402
 GB = 1024 ** 3
 
 
-def sample(avail=50, swap=0, disks=None, procs=None, services=None, owners=None, containers=None):
-    return {'t': 0, 'mem_total': 16 * GB, 'mem_avail': int(16 * GB * avail / 100), 'mem_avail_pct': avail, 'swap_total': 8 * GB, 'swap_used': int(8 * GB * swap / 100), 'swap_pct': swap,
+def sample(avail=50, swap=0, disks=None, procs=None, services=None, owners=None, containers=None, **extra):
+    return {**extra, 't': 0, 'mem_total': 16 * GB, 'mem_avail': int(16 * GB * avail / 100), 'mem_avail_pct': avail, 'swap_total': 8 * GB, 'swap_used': int(8 * GB * swap / 100), 'swap_pct': swap,
             'disks': disks if disks is not None else [{'mount': '/', 'free': 100 * GB, 'total': 200 * GB}], 'procs': procs or [], 'services': services or [], 'port_owners': owners or {}, 'containers': containers}
 
 
@@ -144,6 +144,108 @@ class HogTest(unittest.TestCase):
             e.tick(sample(procs=big), t)
         self.assertEqual(notes, [])
         self.assertEqual(e.hogs(), [])
+
+
+MB = 1024 ** 2
+
+
+class NewRulesTest(unittest.TestCase):
+    def leak_run(self, rss_at, name='app', created=0, **over):
+        e, notes = engine(**over)
+        for t in range(0, 721, 60):
+            e.tick(sample(procs=[{**proc(name, 9, rss_at(t)), 'created': created}]), t)
+        return e, notes
+
+    def test_leak_steady_growth_alerts_once(self):
+        e, notes = self.leak_run(lambda t: 200 * MB + t * MB)   # +720MB / 12 phút, tăng đều
+        leaks = [n for n in notes if n['title'] == 'Có thể rò rỉ bộ nhớ']
+        self.assertEqual(len(leaks), 1)
+        self.assertIn('app', leaks[0]['body'])
+
+    def test_leak_ignores_small_growth_noise_young_and_inference(self):
+        self.assertEqual(self.leak_run(lambda t: 200 * MB + t * MB // 10)[1], [])                       # chỉ +72MB
+        self.assertEqual(self.leak_run(lambda t: 200 * MB + (900 * MB if (t // 60) % 2 else 0))[1], [])  # lên xuống thất thường
+        self.assertEqual(self.leak_run(lambda t: 200 * MB + t * MB, created=500)[1], [])                 # process còn mới
+        self.assertEqual(self.leak_run(lambda t: 200 * MB + t * MB, name='llama-server')[1], [])
+        self.assertEqual(self.leak_run(lambda t: 200 * MB + t * MB, mem_leak={'enabled': False})[1], [])
+
+    def test_leak_history_pruned(self):
+        e, _ = self.leak_run(lambda t: 200 * MB + t * MB)
+        e.tick(sample(procs=[]), 800)
+        self.assertEqual(e.rss_hist, {})
+
+    def test_oom_event_each_time(self):
+        e, notes = engine()
+        self.assertEqual(e.tick(sample(oom_kills=3), 0), [])        # lần đầu chỉ đặt mốc
+        self.assertEqual(e.tick(sample(oom_kills=3), 10), [])
+        a = e.tick(sample(oom_kills=4, procs=[proc('chrome', 2, 3 * GB)]), 20)
+        self.assertEqual((len(a), a[0]['level']), (1, 'error'))
+        self.assertIn('chrome', a[0]['body'])
+        self.assertEqual(len(e.tick(sample(oom_kills=5), 30)), 1)   # lần OOM kế tiếp vẫn báo dù trong cooldown
+        self.assertEqual(e.tick(sample(oom_kills=None), 40), [])
+        e2, _ = engine(oom_kill={'enabled': False})
+        e2.tick(sample(oom_kills=0), 0)
+        self.assertEqual(e2.tick(sample(oom_kills=9), 10), [])
+
+    def test_load_high_needs_duration(self):
+        e, notes = engine()
+        busy = dict(load1=13.0, cores=8, procs=[proc('make', 3, 100 * MB, 70)])
+        e.tick(sample(**busy), 0)
+        self.assertEqual(e.tick(sample(**busy), 179), [])
+        a = e.tick(sample(**busy), 180)
+        self.assertEqual(a[0]['title'], 'Tải CPU của máy quá cao')
+        self.assertIn('make', a[0]['body'])
+        e2, _ = engine()
+        e2.tick(sample(load1=11.0, cores=8), 0)
+        self.assertEqual(e2.tick(sample(load1=11.0, cores=8), 500), [])  # 11 < 8 * 1.5
+
+    def test_temperature(self):
+        e, _ = engine()
+        e.tick(sample(temp=92.0, temp_name='CPU'), 0)
+        a = e.tick(sample(temp=92.0, temp_name='CPU'), 60)
+        self.assertEqual((a[0]['title'], a[0]['level']), ('Nhiệt độ quá cao', 'warn'))
+        e2, _ = engine()
+        e2.tick(sample(temp=97.0, temp_name='GPU'), 0)
+        self.assertEqual(e2.tick(sample(temp=97.0, temp_name='GPU'), 60)[0]['level'], 'error')
+        e3, _ = engine()
+        for t in (0, 100, 200):
+            self.assertEqual(e3.tick(sample(temp=70.0), t), [])
+            self.assertEqual(e3.tick(sample(temp=None), t), [])
+
+    def test_battery(self):
+        e, _ = engine()
+        a = e.tick(sample(battery={'pct': 12, 'plugged': False}), 0)
+        self.assertEqual((a[0]['title'], a[0]['level']), ('Pin yếu', 'warn'))
+        self.assertEqual(engine()[0].tick(sample(battery={'pct': 3, 'plugged': False}), 0)[0]['level'], 'error')
+        self.assertEqual(engine()[0].tick(sample(battery={'pct': 3, 'plugged': True}), 0), [])
+        self.assertEqual(engine()[0].tick(sample(battery={'pct': 50, 'plugged': False}), 0), [])
+        self.assertEqual(engine()[0].tick(sample(battery=None), 0), [])
+
+    def test_zombies(self):
+        e, _ = engine()
+        e.tick(sample(zombies=6), 0)
+        self.assertEqual(e.tick(sample(zombies=6), 299), [])
+        self.assertEqual(e.tick(sample(zombies=6), 300)[0]['title'], 'Nhiều tiến trình zombie')
+        e2, _ = engine()
+        e2.tick(sample(zombies=4), 0)
+        self.assertEqual(e2.tick(sample(zombies=4), 999), [])
+
+    def test_new_rules_have_config_and_clamp(self):
+        cfg = W.load_config('/nonexistent')
+        for k in ('mem_leak', 'oom_kill', 'load_high', 'temp_high', 'battery_low', 'zombies'):
+            self.assertIn(k, cfg['rules'])
+            self.assertIn(k, W.RULE_TITLES)
+        path = os.path.join(tempfile.mkdtemp(), 'w.json')
+        with open(path, 'w') as f:
+            json.dump({'rules': {'load_high': {'x': -5, 'minutes': 'abc'}, 'temp_high': {'celsius': 80}}}, f)
+        c = W.load_config(path)
+        self.assertEqual((c['rules']['load_high']['x'], c['rules']['load_high']['minutes'], c['rules']['temp_high']['celsius']), (0, 3, 80))
+
+    def test_real_sampler_has_new_fields(self):
+        s = W.SystemSampler().sample()
+        for k in ('oom_kills', 'load1', 'cores', 'zombies', 'temp', 'battery'):
+            self.assertIn(k, s)
+        self.assertGreaterEqual(s['cores'], 1)
 
 
 class ServiceTest(unittest.TestCase):

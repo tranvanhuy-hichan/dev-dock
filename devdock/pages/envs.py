@@ -92,7 +92,7 @@ class EnvPage(Page):
             row.set_header(None)
 
     def roots(self):
-        return [os.path.realpath(r) for r in (self.window.store['project_roots'] or P.default_roots())]
+        return [os.path.realpath(r) for r in (P.scan_roots(self.window.store))]
 
     def rel_dir(self, d):
         for r in self.roots():

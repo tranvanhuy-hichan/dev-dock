@@ -13,7 +13,9 @@ def is_env_name(name):
     return name == '.env' or name.startswith('.env.') or name.endswith('.env')
 
 
-def find_env_files(roots, max_depth=4):
+def find_env_files(roots, max_depth=None):
+    from . import projects as P
+    max_depth = P.MAX_DEPTH + 1 if max_depth is None else max_depth
     out = []
 
     def walk(d, depth):

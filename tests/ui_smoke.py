@@ -284,7 +284,7 @@ def docker_tests(win):
         # nút Xem log chuyển sang Log Viewer với đúng nguồn
         pg.detail.open_viewer()
         pump(400)
-        check('open logs jumps to Log Viewer', win.current == 'logs' and win.pages['logs'].source and win.pages['logs'].source[0] == 'docker')
+        check('open logs jumps to Log Viewer', win.is_active(win.pages['logs']) and win.pages['logs'].source and win.pages['logs'].source[0] == 'docker')
         win.select_module('docker')
         # images
         pg.tick_images(True)

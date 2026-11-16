@@ -57,6 +57,11 @@ def dashboard_tests(win):
     win.store['services'] = []
     pg.snap = {'host': 'h', 'os': 'o', 'uptime': 1, 'cpu_total': 5, 'cpu_cores': [1], 'load': [0, 0, 0], 'mem_used': 30, 'mem_total': 100, 'swap_used': 0, 'swap_total': 0,
                'disks': [{'mount': '/', 'free': 80, 'total': 100, 'name': 'x', 'fs': 'ext4'}], 'gpus': [], 'net_rx': 0, 'net_tx': 0}
+    # không phụ thuộc nhiệt độ/cổng thật của máy đang chạy test
+    from devdock.lib import perf as PF
+    real_temps = PF.read_temps
+    PF.read_temps = lambda root='/': {'cpu': None}
+    pg.cpu_temp, pg.secrets, pg.conflicts = None, None, []
     pg.projects, pg.docker, pg.alerts = [], {'available': True, 'containers': []}, []
     pg._attn_sig = None
     pg.render_attention()
@@ -66,6 +71,7 @@ def dashboard_tests(win):
     pg._attn_sig = None
     pg.render_attention()
     check('attention updates on RAM pressure', rows_of(pg.attn_box) and any('RAM' in r.get_title() for r in rows_of(rows_of(pg.attn_box)[0]) if hasattr(r, 'get_title')))
+    PF.read_temps = real_temps
     # ---- tự khởi động (XDG_CONFIG_HOME tạm của bộ test: không đụng ~/.config thật)
     check('autostart off initially', not W.autostart_enabled() and not pg.auto_row.get_active())
     pg.auto_row.set_active(True)

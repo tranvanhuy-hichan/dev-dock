@@ -21,9 +21,14 @@ RULE_UI = [
     ('disk_low', 'Ổ đĩa / và thư mục home sắp đầy', [('pct', 'Trống dưới (%)', 1, 50, 1), ('gb', 'hoặc trống dưới (GB)', 1, 500, 1)]),
     ('hog_mem', 'Một tiến trình giữ quá nhiều RAM liên tục', [('mb', 'Ngưỡng RSS (MB)', 128, 65536, 128), ('minutes', 'Kéo dài tối thiểu (phút)', 1, 120, 1)]),
     ('hog_cpu', 'Một tiến trình chiếm CPU cao liên tục', [('pct', 'Ngưỡng CPU (% của một nhân)', 20, 800, 10), ('minutes', 'Kéo dài tối thiểu (phút)', 1, 120, 1)]),
+    ('mem_leak', 'RAM của một tiến trình tăng đều đặn mà không giảm lại', [('mb', 'Tăng thêm tối thiểu (MB)', 50, 8192, 50), ('minutes', 'Trong khoảng (phút)', 2, 120, 1)]),
+    ('load_high', 'Tải trung bình của máy cao hơn số nhân CPU nhiều lần', [('x', 'Ngưỡng (× số nhân)', 0.5, 10, 0.5), ('minutes', 'Kéo dài tối thiểu (phút)', 1, 60, 1)]),
+    ('temp_high', 'CPU/GPU nóng quá mức', [('celsius', 'Ngưỡng (°C)', 60, 110, 1), ('minutes', 'Kéo dài tối thiểu (phút)', 0, 30, 1)]),
+    ('battery_low', 'Pin yếu khi không cắm sạc (chỉ trên laptop)', [('pct', 'Pin còn dưới (%)', 3, 50, 1)]),
+    ('zombies', 'Nhiều tiến trình zombie tồn tại lâu', [('count', 'Từ bao nhiêu tiến trình', 2, 200, 1), ('minutes', 'Kéo dài tối thiểu (phút)', 1, 120, 1)]),
 ]
 SIMPLE_RULES = [('service_died', 'Dev service tự dừng/lỗi mà bạn không bấm Dừng'), ('docker_died', 'Container Docker thoát bất thường, unhealthy hoặc restart liên tục'),
-                ('port_conflict', 'Dev service đang chạy nhưng cổng bị process khác giữ')]
+                ('port_conflict', 'Dev service đang chạy nhưng cổng bị process khác giữ'), ('oom_kill', 'Kernel vừa buộc dừng một tiến trình vì hết RAM (OOM)')]
 
 
 def fmt_age(sec):

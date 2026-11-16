@@ -19,7 +19,7 @@ def _names(items, n=3):
     return ', '.join(items[:n]) + (f' và {len(items) - n} mục khác' if len(items) > n else '')
 
 
-def attention(sys=None, projects=None, services=None, docker=None, alerts=None, now=None, secrets=None, conflicts=None):
+def attention(sys=None, projects=None, services=None, docker=None, alerts=None, now=None, secrets=None, conflicts=None, cpu_temp=None):
     """Trả về danh sách {'level','title','detail','module'} đã sắp theo mức độ (bad > warn > info).
 
     sys: snapshot của sysmon.Monitor. projects: danh sách từ projects.scan. services: [{'name','state','rc'}].
@@ -35,12 +35,12 @@ def attention(sys=None, projects=None, services=None, docker=None, alerts=None, 
     if sys:
         ram = _pct(sys.get('mem_used', 0), sys.get('mem_total', 0))
         if ram >= 90:
-            add('bad', f'RAM gần đầy ({ram:.0f}%)', 'Xem tiến trình nào đang ngốn bộ nhớ.', 'sysmon')
+            add('bad', f'RAM gần đầy ({ram:.0f}%)', 'Xem tiến trình nào đang ngốn bộ nhớ.', 'memory')
         elif ram >= 80:
-            add('warn', f'RAM đang cao ({ram:.0f}%)', '', 'sysmon')
+            add('warn', f'RAM đang cao ({ram:.0f}%)', '', 'memory')
         swap = _pct(sys.get('swap_used', 0), sys.get('swap_total', 0))
         if sys.get('swap_total') and swap >= 80:
-            add('warn', f'Swap đã dùng {swap:.0f}%', 'Máy đang thiếu RAM thật.', 'sysmon')
+            add('warn', f'Swap đã dùng {swap:.0f}%', 'Máy đang thiếu RAM thật.', 'memory')
         home = os.path.expanduser('~')
         for d in sys.get('disks', []):
             if d['mount'] in ('/', home) and d.get('total'):
@@ -82,6 +82,8 @@ def attention(sys=None, projects=None, services=None, docker=None, alerts=None, 
         add('bad', f"{secrets['bad']} bí mật nghiêm trọng trong {secrets['repos_with']} repo", 'Khoá/.env đã commit — thu hồi và tạo khoá mới.', 'secrets')
     elif secrets and secrets.get('warn'):
         add('info', f"{secrets['warn']} mục nghi chứa bí mật cần xem lại", '', 'secrets')
+    if cpu_temp is not None and cpu_temp >= 90:
+        add('bad' if cpu_temp >= 95 else 'warn', f'CPU đang rất nóng ({cpu_temp:.0f}°C)', 'Chuyển chế độ "Làm mát" hoặc tắt Turbo Boost ở trang Hiệu năng.', 'perf')
     busy = [c for c in (conflicts or []) if c['level'] == 'busy']
     if busy:
         add('warn', f"{len(busy)} dev service bị trùng cổng", '; '.join(c['detail'] for c in busy[:2]), 'ports')

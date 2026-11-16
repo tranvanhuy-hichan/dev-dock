@@ -4,7 +4,7 @@ import os
 import time
 
 DEFAULTS = {
-    'theme': 'system', 'module': 'projects', 'project_roots': [], 'services': [],
+    'theme': 'system', 'module': 'projects', 'project_roots': [], 'project_extra': [], 'scan_depth': 3, 'services': [],
     # DiskCleaner
     'trash_large': True, 'min_mb': 5, 'large_mb': 200, 'scan_large': True, 'dup_scan': True, 'dup_mb': 10,
     'ignored': [], 'ignored_titles': {}, 'total_freed': 0, 'clean_count': 0, 'last_scan': None, 'first_run': None,

@@ -13,6 +13,7 @@ from gi.repository import Adw, GLib, Gtk, Pango, PangoCairo  # noqa: E402
 from ..lib import dashboard as DB  # noqa: E402
 from ..lib import dockercli as DK  # noqa: E402
 from ..lib import ollama as O  # noqa: E402
+from ..lib import perf as PF  # noqa: E402
 from ..lib import ports as PT  # noqa: E402
 from ..lib import projects as P  # noqa: E402
 from ..lib import secrets as S  # noqa: E402
@@ -113,7 +114,7 @@ class DashboardPage(Page):
         self.mon = Monitor()
         self.hist = {'cpu': deque(maxlen=60), 'mem': deque(maxlen=60)}
         self.snap = self.projects = self.docker = self.ollama = None
-        self.secrets, self.conflicts = None, []
+        self.secrets, self.conflicts, self.cpu_temp = None, [], None
         self.alerts, self.last_scan, self.busy, self.svc_sig = [], 0.0, set(), None
         self.hdr_end = [icon_btn('view-refresh-symbolic', 'Làm mới tất cả', self.refresh_all)]
 
@@ -245,11 +246,11 @@ class DashboardPage(Page):
         running = {s['id'] for s in svcs if self.window.services.is_running(s['id'])}
 
         def work():
-            return PT.conflicts(svcs, PT.snapshot(), running), S.totals(list(S.load_cache().values()))
+            return PT.conflicts(svcs, PT.snapshot(), running), S.totals(list(S.load_cache().values())), PF.read_temps()['cpu']
 
         def done(res, _e):
             if res:
-                self.conflicts, self.secrets = res
+                self.conflicts, self.secrets, self.cpu_temp = res
                 self.render_attention()
         self.once('ports', work, done)
 
@@ -257,7 +258,7 @@ class DashboardPage(Page):
         if time.time() - self.last_scan < 45:
             return
         self.last_scan = time.time()
-        roots = self.window.store['project_roots'] or P.default_roots()
+        roots = P.scan_roots(self.window.store)
 
         def done(res, _e):
             if res is not None:
@@ -444,7 +445,7 @@ class DashboardPage(Page):
         if self.snap is None and self.projects is None and self.docker is None:
             return
         svc_state = [{'name': s['name'], **{k: v for k, v in (self.window.services.status(s['id']) or {}).items() if k in ('state', 'rc')}} for s in self.window.store['services']]
-        items = DB.attention(self.snap, self.projects, svc_state, self.docker, self.alerts, secrets=self.secrets, conflicts=self.conflicts)
+        items = DB.attention(self.snap, self.projects, svc_state, self.docker, self.alerts, secrets=self.secrets, conflicts=self.conflicts, cpu_temp=self.cpu_temp)
         sig = [(i['level'], i['title'], i['detail']) for i in items]
         if sig == getattr(self, '_attn_sig', None):
             return

@@ -739,7 +739,7 @@ class DockerPage(Page):
         self.load_compose_list()
 
     def find_compose(self):
-        roots = self.window.store['project_roots'] or P.default_roots()
+        roots = P.scan_roots(self.window.store)
         self.toast('Đang tìm file compose…')
 
         def done(found, err):

@@ -110,7 +110,7 @@ class PortsPage(Page):
         if self.pbusy:
             return
         self.pbusy = True
-        roots = self.window.store['project_roots'] or P.default_roots()
+        roots = P.scan_roots(self.window.store)
 
         def done(res, _err):
             self.pbusy = False

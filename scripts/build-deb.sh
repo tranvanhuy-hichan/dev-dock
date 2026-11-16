@@ -80,7 +80,7 @@ Settings and monitoring configuration.
 https://github.com/tranvanhuy-hichan/dev-dock
 MAN
 chmod 644 "$ROOT/usr/share/man/man1/devdock.1.gz"
-printf 'devdock (%s) stable; urgency=low\n\n  * Bản phát hành %s.\n\n -- %s  %s\n' "$VERSION" "$VERSION" "$MAINTAINER" "$(date -R)" | gzip -9n > "$ROOT/usr/share/doc/devdock/changelog.gz"
+printf 'devdock (%s) stable; urgency=low\n\n  * Release %s.\n\n -- %s  %s\n' "$VERSION" "$VERSION" "$MAINTAINER" "$(date -R)" | gzip -9n > "$ROOT/usr/share/doc/devdock/changelog.gz"
 chmod 644 "$ROOT/usr/share/doc/devdock/changelog.gz"
 gzip -9nf "$ROOT/usr/share/doc/devdock/README.md"
 
@@ -102,13 +102,13 @@ Depends: python3 (>= 3.11), python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1 (>= 1.5), p
 Recommends: git, python3-yaml, power-profiles-daemon, pkexec | policykit-1
 Suggests: docker.io | docker-ce-cli, ollama
 Homepage: https://github.com/tranvanhuy-hichan/dev-dock
-Description: Trung tâm cho developer: project, Git, dev service, Docker, giám sát hệ thống
- DevDock là ứng dụng GTK4/libadwaita (GNOME) gom công cụ hằng ngày
- của developer vào một cửa sổ: project và Git, dev service và cổng
- mạng, file .env, log, Docker, database, API tester, quét bí mật
- (secrets), kiểm tra thư viện, RAM thật của từng tiến trình, giám sát
- và cảnh báo hệ thống, chế độ hiệu năng và quạt, dọn đĩa, quản lý
- model Ollama. Chạy hoàn toàn cục bộ.
+Description: Developer hub: projects, Git, dev services, Docker, system monitoring
+ DevDock is a native GTK4/libadwaita (GNOME) app that puts a developer's
+ everyday tools in one window: projects and Git, dev services and ports,
+ environment files, logs, Docker, databases, an API tester, secrets
+ scanning, real per-process memory usage, system alerts, performance
+ and fan controls, disk cleanup and Ollama model management. Runs
+ entirely on your machine. The interface is currently in Vietnamese.
 CTRL
 cat > "$ROOT/DEBIAN/postinst" <<'POST'
 #!/bin/sh
